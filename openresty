@@ -1,0 +1,517 @@
+https://www.nginx.com/resources/wiki/modules/lua/ 在这个地址查看lua的所有命令介绍
+背景：编译openresty时增加geoip模块,最好选用源码安装，因为yum安装的没有geoip模块
+~]# wget http://geolite.maxmind.com/download/geoip/api/c/GeoIP-1.4.8.tar.gz
+~]# tar -zxvf GeoIP-1.4.8.tar.gz
+~]# yum install pcre-devel openssl-devel gcc -y
+~]# ./configure
+~]# make
+~]# make install
+~]# find / -name libGeoIP.so  只要出现如下两个文件说明配置成功
+/usr/local/lib/libGeoIP.so
+/GeoIP-1.4.8/libGeoIP/.libs/libGeoIP.so
+
+如下两个IP包起作用要依赖上面安装的GeoIP
+~]# wget http://geolite.maxmind.com/download/geoip/database/GeoLiteCountry/GeoIP.dat.gz
+~]# gzip -d GeoIP.dat.gz  这是国家IP包
+~]# wget http://geolite.maxmind.com/download/geoip/database/GeoLiteCity.dat.gz
+~]# gzip -d  GeoLiteCity.dat.gz  这是城市ip包
+安装openresty
+~]# wget https://openresty.org/download/openresty-1.13.6.1.tar.gz
+~]# tar -xxvf openresty-1.13.6.1.tar.gz
+~]# cd openresty-1.13.6.1
+~]# ./configure --prefix=/usr/local/openresty  --with-http_geoip_module  源码编译openresty时增加geoip模块
+~]# gmake
+~]# gmake install
+~]# ll /usr/local/openresty/  确认该目录已经生成
+~]# mv GeoIP.dat GeoLiteCity.dat /usr/local/openresty/nginx/conf/
+~]# nginx -V  此命令可以查看编译参数，非常有用
+~]# vi /usr/local/openresty/nginx/conf/nginx.conf
+orker_processes  auto;
+worker_rlimit_nofile 10240;
+user nginx nginx;
+error_log  /data/nginx/logs/error.log;
+events {
+    use epoll;
+    multi_accept on;
+    worker_connections  10240;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+   # geoip_proxy  10.0.0.0/8;
+    geoip_proxy_recursive on;
+   # deny 106.114.100.250;
+
+    log_format  site_log '"$remote_addr" "$http_x_forwarded_for" "$geoip_country_code" "$remote_user" "$time_local" "$request"'
+                         '"$status" "$body_bytes_sent" "$http_referer"'
+                         '"$http_user_agent" "$upstream_addr" "$upstream_response_time" "$request_time" "$http_host"';
+
+    access_log  /data/nginx/logs/access.log  site_log;
+    #access_by_lua_file "/data/www/NginxPlugin/current/common_access.lua";
+
+    sendfile        on;
+    tcp_nopush     on;
+    tcp_nodelay on;
+
+    #proxy_http_version 1.1;
+    #proxy_set_header Connection "";
+  keepalive_timeout 60;
+    open_file_cache max=10240 inactive=20s;
+    open_file_cache_valid 20s;
+    open_file_cache_min_uses 1;
+    client_max_body_size 30m;
+    client_body_timeout 20;
+    client_header_timeout 20;
+    reset_timedout_connection on;
+    #send_timeout 25;
+    gzip on;
+    gzip_vary on;
+    gzip_http_version 1.1;
+    gzip_disable "MSIE [1-6]\."; #no compress for IE6 due to IE6 bug
+    gzip_comp_level 5; #compress level 9
+    gzip_min_length 1024; #no compress less than 1K responses
+    gzip_types text/plain text/css application/x-javascript text/xml application/xml application/xml+rss text/javascript;
+
+    uninitialized_variable_warn off;
+    lua_package_path "/data/www/NginxPlugin/current/share/?.lua;;";
+    #lua_package_path "/etc/nginx/lua/lib/?.lua;;";
+    #add for waf
+#    lua_package_path "/etc/nginx/waf/?.lua";
+#    lua_shared_dict limit 10m;
+#    init_by_lua_file  /etc/nginx/waf/init.lua;
+#    access_by_lua_file /etc/nginx/waf/waf.lua;
+
+    #add for geoip
+    geoip_country /etc/nginx/conf/GeoIP.dat;
+
+    #init_by_lua_file /etc/nginx/lua/stat/recover_stat.lua;
+    lua_shared_dict request_stat 10m;
+    #lua_shared_dict status_code_stat 80m;
+    lua_shared_dict gw_limit_zone 100m;
+    lua_shared_dict qps_limit 50m;
+    include /etc/nginx/conf.d/*.conf;
+}
+]# nginx -t 测试成功，说明配置成功
+如果nginx -V出现如下错误
+error while loading shared libraries: libGeoIP.so.1: cannot open shared object file: No such file or directory
+执行如下命令即可
+ldd /usr/local/nginx/sbin/nginx  查看类库路径
+ln -s /usr/local/lib/libGeoIP.so* /lib64/ 做一个软连接
+ldconfig 
+nginx -V 错误提示消失，输出正常的编译参数
+
+
+ngx_lua介绍
+1)Nginx采用模块化的架构，官方版本的Nginx中大部分功能都是通过模块方式提供的，比如Http模块、Mail模块等。
+通过开发模块扩展Nginx，可以将Nginx打造成一个全能的应用服务器，这样可以将一些功能在前端Nginx反向代理层解决，比如登录校验、js合并、甚至数据库访问等等。
+但是，Nginx模块需要用C开发，而且必须符合一系列复杂的规则，最重要的用C开发模块必须要熟悉Nginx的源代码，使得开发者对其望而生畏。
+淘宝的agentzh和chaoslawful开发的ngx_lua模块通过将lua解释器集成进Nginx，可以采用lua脚本实现业务逻辑，由于lua的紧凑、快速以及内建协程，
+所以在保证高并发服务能力的同时极大地降低了业务逻辑实现成本
+2)OpenResty是一个基于Nginx与Lua的高性能Web平台，其内部集成了大量精良的Lua库、第三方模块以及大多数的依赖项。
+用于方便地搭建能够处理超高并发、扩展性极高的动态 Web 应用、Web 服务和动态网关, 所以可以把opnresty理解为一个加强版的nginx，它的强项就是支持lua
+3)openresty的安装，参照openresty官网http://openresty.org/cn/步骤即可
+]# vim  /etc/yum.repos.d/openresty.repo 
+[openresty]
+name=Official OpenResty Open Source Repository for CentOS
+baseurl=https://openresty.org/package/centos/$releasever/$basearch
+skip_if_unavailable=False
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://openresty.org/package/pubkey.gpg
+enabled=1
+enabled_metadata=1
+[root@www ~]# yum repolist 确保openresty仓库可以使用
+[root@www ~]# yum install -y openresty   确保没有安装nginx，不然会和nginx产生冲突
+[root@www ~]# rpm -ql openresty  即使yum安装的也是在/usr/local目录，所以需要做变量申明
+[root@www ~]# vim  /etc/profile.d/openresty.sh  
+export PATH=/usr/local/openresty/nginx/sbin:$PATH
+[root@www ~]# source /etc/profile.d/openresty.sh
+[root@www ~]# nginx 使用nginx命令启动服务
+[root@www ~]# ss -tunl 查看80端口是否监听
+[root@www ~]# echo 'welcome to openresty' >/usr/local/openresty/nginx/html/index.html 这是默认的主页
+[root@www ~]# curl http://192.168.139.133/index.html  说明配置成功
+welcome to openresty 
+
+补充说明：通过新建其他目录，可以启动与原来nginx进程不相关的nginx服务
+]# mkdir -p  openresty/{conf,logs}
+]# vi  openresty/conf/nginx.conf
+worker_processes  1;        #nginx worker 数量
+error_log logs/error.log;   #指定错误日志文件路径
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        #监听端口，若你的6699端口已经被占用，则需要修改
+        listen 6699;
+        location / {
+            default_type text/html;
+
+            content_by_lua_block {
+                ngx.say("HelloidsfjkdfjWorld")
+            }
+        }
+    }
+}
+]# nginx -p openresty/  -t 
+]# nginx -p openresty/  
+[root@0f5c987f1cfb ~]# netstat -tunlp
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address               Foreign Address             State       PID/Program name
+tcp        0      0 0.0.0.0:6699                0.0.0.0:*                   LISTEN      66/nginx
+tcp        0      0 0.0.0.0:80                  0.0.0.0:*                   LISTEN      54/nginx
+[root@0f5c987f1cfb ~]# ps aux
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root         1  0.0  0.1  13028  3060 pts/0    Ss+  04:44   0:00 /bin/bash
+root        25  0.0  0.1  13028  3080 pts/1    Ss   06:34   0:00 /bin/bash
+root        54  0.0  0.0  35704   940 ?        Ss   07:39   0:00 nginx: master p
+nobody      55  0.0  0.1  36108  3760 ?        S    07:39   0:00 nginx: worker p
+root        66  0.0  0.0  35700   912 ?        Ss   07:42   0:00 nginx: master p
+nobody      67  0.0  0.1  36172  2972 ?        S    07:42   0:00 nginx: worker p
+4)lua的配置指令content_by_lua的使用
+[root@www ~]# vim /usr/local/openresty/nginx/conf/nginx.conf  这是openresty的主配置文件
+       location / {
+            default_type text/html;
+            content_by_lua 'ngx.say("welcome to openresty of nginx")';    ngx.say是lua显露給模块的接口
+        }
+
+[root@www ~]# nginx -t
+[root@www ~]# service openresty  restart
+[root@www ~]# curl http://192.168.139.133
+welcome to openresty of nginx
+
+5)lua的配置指令content_by_lua_file的使用
+[root@www ~]# vim /usr/local/openresty/nginx/conf/nginx.conf
+location = / {
+           content_by_lua_file conf/lua/hello.lua;  路径一定要写对
+        }
+[root@www ~]# mkdir /usr/local/openresty/nginx/conf/lua
+[root@www ~]# vim  /usr/local/openresty/nginx/conf/lua/hello.lua
+ngx.status = 200
+ngx.header.content_type = 'application/json; charset=utf-8'
+ngx.say('{"success":true, "result":{"android":"1.0.0","ios":"1.0.5"}}')
+[root@www ~]# curl http://192.168.139.133 
+{"success":true, "result":{"android":"1.0.0","ios":"1.0.5"}}
+
+
+7)location /test  {
+             echo "test";
+        }
+此时curl http://ip/test会出现test内容，但是在浏览器输入http://ip/test后会把对应的内容下载下来
+8)location /auth {
+           access_by_lua '
+             if ngx.var.arg_user == "ntes" then
+                return
+             else
+                Ngx.exit(ngx.HTTP_FORBIDDEN)
+             end
+             ';
+          echo  'welcome ntes';
+         }
+]# curl 'http://127.0.0.1/auth?user=ntes'  其他用户就会出错
+welcome ntes
+9)rewrite_by_lua和rewrite_by_lua_file,实现url重写,在rewrite阶段运行
+location =/foo {
+           rewrite_by_lua 'ngx.exec("/bar")';
+        }
+
+       location =/bar {
+             default_type text/html;
+             content_by_lua 'ngx.say("welcome to openresty of nginx")';
+        }
+]# curl http://127.0.0.1/foo
+welcome to openresty of nginx
+10)配置在Lua中訪问Nginx变量
+location =/hello {
+           content_by_lua '
+              local who = ngx.var.arg_who
+              ngx.say("Hello, ", who, "!")
+              ';
+       }
+]# curl 'http://127.0.0.1/hello?who=world'
+Hello, world!
+11)ngx.location.capture
+语法：res= ngx.location.capture(uri, options?) 用于发出一个同步的，非堵塞的Nginxsubrequest子请求
+能够通过Nginx subrequest向其他location发出非堵塞的内部请求。这些location能够是配置用于读取目录的，也能够是其他的C模块
+location =/other {
+           default_type text/html;
+           content_by_lua 'ngx.say("welcome to openresty of nginx")';
+       }
+       # Lua非堵塞IO
+       location =/lua {
+          content_by_lua '
+             local res = ngx.location.capture("/other")
+             if res.status == 200 then
+                ngx.print(res.body)
+             end
+          ';
+       }
+]# curl  http://127.0.0.1/lua
+welcome to openresty of nginx
+
+补充说明下，Nginx处理Http请求的过程分析
+1)表面上，当Nginx处理一个来自client的请求时，先依据请求头的host、ip和port来确定由哪个server处理，确定了server之后，再依据请求的uri找到相应的location。
+  这个请求就由这个location处理
+2)实际上，Nginx处理每一个用户请求时，都是按照若干个不同阶phase依次处理的，而不是根据配置文件上的顺序。Nginx处理请求的过程一共划分为11个阶段，按照执行顺序依次是
+post-read、server-rewrite、find-config、rewrite、post-rewrite、 preaccess、access、post-access、try-files、content、log.
+
+post-read:
+读取请求内容阶段，Nginx读取并解析完请求头之后就立即开始运行
+例如模块ngx_realip就在post-read阶段注册了处理程序，它的功能是迫使Nginx认为当前请求的来源地址是指定的某一个请求头的值。
+server-rewrite
+Server请求地址重写阶段，当ngx_rewrite模块的set配置指令直接书写在server配置块中时，基本上都是运行在server-rewrite阶段
+find-config
+配置查找阶段，这个阶段并不支持Nginx模块注册处理程序，而是由Nginx核心来完成当前请求与location配置块之间的配对工作。
+rewrite
+Location请求地址重写阶段，当ngx_rewrite模块的指令用于location块中时，便是运行在这个rewrite 阶段。
+另外，ngx_set_misc(设置md5、encode_base64等)模块的指令，还有ngx_lua模块的set_by_lua指令和rewrite_by_lua指令也在此阶段。
+post-rewrite
+请求地址重写提交阶段，由Nginx核心完成rewrite阶段所要求的“内部跳转”操作,如果rewrite 阶段有此要求的话。
+preaccess
+访问权限检查准备阶段，标准模块ngx_limit_req和ngx_limit_zone就运行在此阶段，前者可以控制请求的访问频度，而后者可以限制访问的并发度。
+access
+访问权限检查阶段，标准模块ngx_access、第三方模块ngx_auth_request以及第三方模块ngx_lua的access_by_lua指令就运行在这个阶段。
+配置指令多是执行访问控制性质的任务，比如检查用户的访问权限，检查用户的来源IP地址是否合法
+post-access
+访问权限检查提交阶段，主要用于配合access阶段实现标准ngx_http_core模块提供的配置指令satisfy的功能。
+satisfy all(与关系)
+satisfy any(或关系)
+try-files
+配置项try_files处理阶段，专门用于实现标准配置指令try_files的功能
+如果前 N-1 个参数所对应的文件系统对象都不存在，try-files阶段就会立即发起“内部跳转”到最后一个参数（即第 N 个参数）所指定的 URI.
+content
+内容产生阶段，Nginx 的 content 阶段是所有请求处理阶段中最为重要的一个，因为运行在这个阶段的配置指令一般都肩负着生成“内容”，并输出 HTTP 响应的使命。
+log
+日志模块处理阶段，记录日志
+
+Nginx下Lua处理阶段与使用范围：
+init_by_lua            http
+set_by_lua             server, server if, location, location if
+rewrite_by_lua         http, server, location, location if
+access_by_lua          http, server, location, location if
+content_by_lua         location, location if
+header_filter_by_lua   http, server, location, location if
+body_filter_by_lua     http, server, location, location if
+log_by_lua             http, server, location, location if
+timer
+init_by_lua:
+在nginx重新加载配置文件时，运行里面lua脚本，常用于全局变量的申请。
+例如lua_shared_dict共享内存的申请，只有当nginx重起后，共享内存数据才清空，这常用于统计。
+set_by_lua:
+设置一个变量，常用与计算一个逻辑，然后返回结果
+该阶段不能运行Output API、Control API、Subrequest API、Cosocket API
+rewrite_by_lua:
+在access阶段前运行，主要用于rewrite
+access_by_lua:
+主要用于访问控制，能收集到大部分变量，类似status需要在log阶段才有。
+这条指令运行于nginx access阶段的末尾，因此总是在 allow 和 deny 这样的指令之后运行，虽然它们同属 access 阶段。
+content_by_lua:
+阶段是所有请求处理阶段中最为重要的一个，运行在这个阶段的配置指令一般都肩负着生成内容（content）并输出HTTP响应。
+header_filter_by_lua:
+一般只用于设置Cookie和Headers等
+该阶段不能运行Output API、Control API、Subrequest API、Cosocket API
+body_filter_by_lua:
+一般会在一次请求中被调用多次, 因为这是实现基于 HTTP 1.1 chunked 编码的所谓“流式输出”的。
+该阶段不能运行Output API、Control API、Subrequest API、Cosocket API
+log_by_lua:
+该阶段总是运行在请求结束的时候，用于请求的后续操作，如在共享内存中进行统计数据,如果要高精确的数据统计，应该使用body_filter_by_lua。
+该阶段不能运行Output API、Control API、Subrequest API、Cosocket API
+timer:
+
+案例：获取uri参数的两种方式
+]# vi /usr/local/openresty/nginx/conf/nginx.conf
+   location /print_param {
+       content_by_lua_block {
+           ---方法1
+           local arg = ngx.req.get_uri_args()
+           for k,v in pairs(arg) do
+               ngx.say("[GET ] key:", k, " v:", v)
+           end
+
+          --方法2
+          local a = ngx.var.arg_a or 0
+          local b = ngx.var.arg_b or 0
+          ngx.say("ngx.var.arg_a=",a)
+          ngx.say("ngx.var.arg_b=",b)
+       }
+   }
+]# curl '127.0.0.1/print_param?a=1&b=2'
+[GET ] key:b v:2
+[GET ] key:a v:1
+ngx.var.arg_a=1
+ngx.var.arg_b=2
+
+案例:为wake新架构准备，根据不同的版本号调度到不同后端主机
+注意获取nginx变量和uri参数的写法，两者相似，但不一样
+]# vi /usr/local/openresty/nginx/conf/nginx.conf
+upstream server1 {
+       server 172.17.0.3;
+}
+upstream server2 {
+       server 172.17.0.4;
+}
+server {
+        listen       80;
+        server_name  localhost;
+        location / {
+                set $proxy_pass_target  50;
+                access_by_lua_file  /usr/local/openresty/nginx/conf/hello.lua;
+                proxy_pass  $proxy_pass_target;
+        }
+]# vi /usr/local/openresty/nginx/conf/hello.lua
+ver = ngx.var.arg_ver
+a,b=string.find(ver,"%d+.")
+c=string.sub(ver, a, b-1)
+d=tonumber(c)
+if d >= 4 then
+   ngx.var.proxy_pass_target = 'http://server1'
+else
+   ngx.var.proxy_pass_target = 'http://server2'
+end
+]# nginx -t
+]# nginx -s reload
+]# curl 'http://172.17.0.2/?ver=20.0.1'
+from 172.17.0.3
+]# curl 'http://172.17.0.2/?ver=3.0.1'
+from 172.17.0.4
+后端主机准备好主页即可
+
+进一步修改如下
+]# vi  /usr/local/openresty/nginx/conf/hello.lua
+ver = ngx.var.arg_ver
+err=string.find(ver,"%d+.%d+.%d+.%d+")
+if err == nil then
+   ngx.var.proxy_pass_target = 'http://server1'
+else
+   ngx.var.proxy_pass_target = 'http://server2'
+end
+
+部分lua语法：
+1)字符串还可以用一种长括号（即[[ ]]）括起来的方式定义
+2)逻辑运算符，Lua 中的 and 和 or 是不同于 c 语言的。在 c 语言中，and 和 or 只得到两个值 1 和 0，其中 1 表示真，0 表示假。而 Lua 中 and 的执行过程是这样的
+  a and b 如果 a 为 nil，则返回 a，否则返回 b;
+  a or b 如果 a 为 nil，则返回 b，否则返回 a
+
+案例:
+]# vi hello.lua
+local corp = {
+    web = "www.google.com", --索引为字符串，key = "web",value = "www.google.com"
+    staff = {"Jack", "Scott", "Gary"}, --索引为字符串，值也是一个表
+    100876,         --相当于 [1] = 100876，此时索引为数字,key = 1, value =10087
+    100191,              --相当于 [2] = 100191，此时索引为数字
+    [10] = 360,          --直接把数字索引给出
+    ["city"] = "Beijing" --索引为字符串
+}
+print(corp.web)  如下两种表达方式是一样的
+print(corp["web"])
+print(corp[1])
+print(corp.city)
+print(corp["city"])
+print(corp.staff[1])
+print(corp[10])
+注释用--,不是#
+]# luajit-2.1.0-beta1 hello.lua
+www.google.com
+www.google.com
+100876
+Beijing
+Beijing
+Jack
+360
+案例:Lua 还支持变长参数,若形参为 ... , 表示该函数可以接收不同长度的参数。访问参数的时候也要使用 ...
+]# vi   hello.lua
+local function func( ... )                -- 形参为 ... ,表示函数采用变长参数
+   local temp = {...}                     -- 访问的时候也要使用 ...
+   local ans = table.concat(temp, " ")    -- 使用 table.concat 库函数对组内容使用 " " 拼接成字符串。
+   print(ans)
+end
+func(1, 2)        -- 传递了两个参数
+func(1, 2, 3, 4)  -- 传递了四个参数
+案例:
+当函数参数是 table 类型时，传递进来的是 实际参数的引用，此时在函数内部对该 table 所做的修改，
+会直接对调用者所传递的实际参数生效，而无需自己返回结果和让调用者进行赋值
+]# vi  hello.lua
+function change(arg)             --change函数，改变长方形的长和宽，使其各增长一倍
+  arg.width = arg.width * 2     --表arg不是表rectangle的拷贝，他们是同一个表
+  arg.height = arg.height * 2
+end                  -- 也就是说，此处有return arg和没有return arg都是一样的
+
+local rectangle = { width = 20, height = 15 }
+print("before change:", "width=", rectangle.width,"height=", rectangle.height)
+change(rectangle)
+print("after change:", "width=", rectangle.width,"height=", rectangle.height)
+
+案例:
+一个代码模块就是一个程序库，可以通过 require 来加载。模块加载后的结果通过是一个 Lua table
+在Lua中创建一个模块最简单的方法是，创建一个table，并将所有需要导出的函数放入其中，最后返回这个table就可以了。相当于将导出的函数作为table的一个字段
+同时还要注意冒号和点号的区别
+]# vi  my.lua  定义模块
+local foo={}
+local function getname()
+    return "Lucy"
+end
+function foo.greeting()
+    print("hello " .. getname())
+end
+return foo   --这一句一定不能少
+
+]# vi  main.lua  调用模块
+local fp = require("my")
+fp.greeting()     -->output: hello Lucy
+
+案例:
+在 Lua 中，我们可以使用表和函数实现面向对象。实际和模块的用法很相似
+]# vi  my.lua
+local M = {}
+local mt = { __index = M }
+function M.deposit (self, v)
+    self.balance = self.balance + v
+end
+function M.withdraw (self, v)
+    if self.balance > v then
+        self.balance = self.balance - v
+    else
+        error("insufficient funds")
+    end
+end
+local n={}
+function n.new (self, balance)
+    balance = balance or 0
+    return setmetatable({balance = balance}, mt)
+end
+return n
+
+]# vi  main.lua
+local account = require("my")
+local a = account:new()
+a:deposit(100)
+local b = account:new()
+b:deposit(50)
+print(a.balance)  --> output: 100
+print(b.balance)  --> output: 50
+
+案例：判断表为空
+]# vi  hello.lua
+local next = next   
+local a = {}
+local b = {"hello",name = "Bob", sex = "Male"}
+if next(a) == nil then
+    print("next(a) == nil")
+end
+if next(b) == nil then    next是一个函数，next(b)实际就是返回b的第一个元素
+    print("next(b) == nil")
+else
+    print(next(b))
+end
+]# luajit-2.1.0-beta1  hello.lua
+next(a) == nil
+1	hello
+案例：判断表是否为空的最终表达式
+function isTableEmpty(t)
+    return t == nil or next(t) == nil
+end
+
+lua+openresty学习网站
+http://wiki.jikexueyuan.com/project/openresty/lua/function_define.html

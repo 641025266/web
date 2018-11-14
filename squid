@@ -1,0 +1,44 @@
+﻿squid的安装配置
+   ~]# yum install -y squid
+   ~]# vi /etc/squid/squid.conf
+      acl localnet src 10.10.0.0/16   # RFC1918 possible internal network
+      acl SSL_ports port 443
+      acl Safe_ports port 80          # http
+      acl CONNECT method CONNECT
+      http_access allow  Safe_ports
+      http_access allow  SSL_ports
+      http_access allow localnet   把这如上4条配置写在一起，且写在最前面
+      http_port 3128  transparent  加上transparent表示是透明代理
+      http_access allow  CONNECT
+      cache_dir ufs /var/spool/squid 100 16 256  
+      cache_access_log /var/log/squid/access.log
+      cache_log /var/log/squid/cache.log
+      cache_store_log /var/log/squid/store.log
+      logfile_rotate 7   保留6份历史日志和1份当前日志
+      其余配置不做改动
+说明：
+   1）因为目前只计划代理docker服务，所以只开放443端口，后续需要代理其他服务时，可以打开其他端口
+   2）目前只开放了CONNECT方法，该方法同get很类似。如果需要开放put和post，需增加如下两行配置
+      acl Uploads method PUT POST
+      http_access allow  Uploads
+   ~]# squid  -z  创建交换日志 
+   ~]# service squid start
+   ~]# ss -tunl 查看3128端口是否监听
+   ~]# ll /var/log/squid/
+total 682280
+-rw-r----- 1 squid squid 698631370 Dec 21 14:13 access.log
+-rw-r----- 1 squid squid     14074 Dec 21 14:20 cache.log
+-rw-r--r-- 1 root  root          0 Dec 20 17:38 squid.out
+-rw-r----- 1 squid squid         0 Dec 21 14:20 store.log
+   ~]# squid -k  rotate   做日志切割
+   ~]# ll /var/log/squid/ 查看日志切割效果
+total 682284
+-rw-r----- 1 squid squid         0 Dec 21 14:20 access.log
+-rw-r----- 1 squid squid 698631370 Dec 21 14:13 access.log.0
+-rw-r----- 1 squid squid       294 Dec 21 14:20 cache.log
+-rw-r----- 1 squid squid     14074 Dec 21 14:20 cache.log.0
+-rw-r--r-- 1 root  root          0 Dec 20 17:38 squid.out
+-rw-r----- 1 squid squid         0 Dec 21 14:20 store.log
+-rw-r----- 1 squid squid         0 Dec 21 14:20 store.log.0
+   ~]# crontab -e
+      0 3 * * * /usr/sbin/squid -k rotate  每天凌晨3点自动做日志切割

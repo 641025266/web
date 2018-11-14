@@ -1,0 +1,293 @@
+﻿35-1	
+
+load balancer
+     layer 4:lvs(没有端口的限制），haproxy也可以
+     layer 7:ats,nginx,haproxy,apache(配合tomcat使用）
+haproxy负载均衡的两种模式：
+     tcp mode：4层调度，模拟实现，依然需要基于socket进行。比如监听在3306端口，把服务转交给后端的mysql服务
+     http mode：7层调度
+评估负载均衡器的性能：
+    会话率（创建会话的速率），并发连接能力，数据处理速度     
+HAProxy: 
+官网是www.haproxy.org
+	代理(http): 掮客(broker)
+		正向代理：
+		反向代理：
+		代理作用：web缓存（加速）、反向代理、内容路由（根据流量及内容类型等将请求转发至特定服务器）、转码器；在代理服务器上添加Via首部；
+		缓存的作用：减少冗余内容传输；节省带宽、缓解网络瓶颈；降低了对原始服务器的请求压力；降低了传输延迟；
+        HAProxy特性：
+                  只是http协议的反向代理，不提供缓存功能；但额外支持对tcp层对基于tcp通信的应用做LB；
+                  适用场景是，大型互联网外网或内网的4层/7层做负载均衡
+                  同时可以增加，删除，修改http首部
+                  event-driven, ebtree
+	配置文件：/etc/haproxy/haproxy.cfg
+        环境配置文件：/etc/sysconfig/haproxy
+        程序文件：/usr/sbin/haproxy
+	配置文件分为两段：
+			global：
+				1)进程及安全配置相关的参数
+                                      chroot 根目录禁锢
+                                      daemon 
+                                      log <address> <facility> [max|min level] 定义全局的syslog服务器
+                                      nbproc<number>  指明要启动的proxy进程数据
+                                      ulimt-n<number> 单个proxy进程能打开的最大文件数
+                                2）性能调整相关参数
+                                      maxconn：单个进程的最大并发连接数
+                                      maxpipe：haproxy使用pipe机制实现内核级tcp报文重组，该值表示单进程能使用的最大pipe值，默认为maxconn/4
+                                      noepoll/nokqueue/nopoll/nosepoll:前面加了no，表示禁用事件机制
+                                      nosplice：禁用内核级tcp报文重组
+                                      spread-checks <0---50> 百分比
+                                3）Debug参数
+                                      debug，quiet等
+			proxies：
+				1）defaults：用于为frontend, backend, listen提供默认配置
+                                2）frontend <name>:定义监听的套接字，面向客户端
+                                3) backend <name>：定义后端服务器，面向后端server
+                                4) listen <name>：通过关联前端和后端定义一个完整的proxy server
+                                5）bind:指明监听的套接字，ipv4/ipv6，unix socket文件
+                                        bind <address> <port/port-range> [param]
+                                        bind /<path> [param]
+HAProxy(2)
+balance的两种使用方式：
+	1）balance <algorithm> [arguments]
+	        balance: 指明调度算法，调度算法包括（动态：权重可动态调整）和（静态：调整权重不会实时生效）
+                <algorithm>
+			1）roundrobin: 轮询，动态算法，支持权重的运行时调整慢启动机制，每个后端主机最多支持4095个后端主机；
+			2）static-rr: 轮询，静态算法，不支持权重的运行时调整慢启动机制，每个后端主机支持的数量无上限；
+			3）leastconn: 动态，根据后端主机的负载数量进行调度；仅适用长连接的会话，比如mysql
+			4）source:即源地址hash
+				hash-type:即hash算法（取模法和一致性哈希法参考memcache里面的讲解）
+					map-based：取模法；静态；将源地址hash计算后除以服务器总权重，服务器数量变动会影响调度效果
+					consistent：一致性哈希法；动态；服务器变动影响局部调度效果
+         2）balance uri_param <param> [check_post]
+                        URL语法：<scheme>//<user>:<passwd>@<host>:<port>/<path>;<param>?<query>#<frag>
+			5）uri:对uri的左半部分或整个uri做hash计算，并除以服务器的总权重后挑选至后端主机，作用在于能够将对同一个uri的请求始终发往同一个后端主机。
+                               适用后端是缓存服务器的场景
+                               左半部uri是：/<path>;<param>
+                               整个uri是：/<path>;<param>?<query>#<frag>
+			       hash-type：map-based和consistent
+			6）uri_param: 根据uri中指定的<param>参数值进行hash计算，并除以服务器的总权重后挑选至后端主机
+                                      通常用于追踪请求中的用户标识，以确保来自同一个用户的请求始终发往同一个后端主机
+                               hash-type：map-based和consistent
+			7）hdr(<name>)：比如hdr（hostname），hdr（cookie），根据请求报文中指定的header name(如use_agent, referer, hostname)进行调度；
+                                        把指定的header的值做hash计算，并除以服务器的总权重后挑选至后端主机；如果指定的header name没有有效值，则轮询调度
+			       hash-type：map-based和consistent
+	bind：只能用于frontend, listen，表示前端监听的端口，参考下面的实际使用案例
+	mode: 包括tcp, http, health
+              tcp：当代理的为ssl，ssh，mysql等非http协议时使用，默认
+              http：当代理http协议时使用
+              health：当收到请求时仅回应ok即断开连接
+35-4
+	log:
+              log format <string> 日志格式
+              capture cookie <name> len <length>         记录请求或响应报文的cookie于日志中
+	      capture request header <name> len <length> 记录请求报文的首部于日志中
+	      capture response header <name> len <length>记录响应报文的首部于日志中
+              compress algo <algorithm> 支持的algo有identify，gzip，deflate
+              compress type <mime type> type即压缩的mime类型，通常仅压缩文件类型的资源
+              当mode为http时，记录丰富的日志信息：
+	      option httplog
+	default_backend: 为frontend指明使用的默认后端；
+	use_backend: 条件式后端调用；
+	server:定义后端主机
+	     server <name> <addr>[:port] [param]
+                                name：haproxy的内部服务器名称，出现在日志或警告信息中；如果设定为http_send_server_name，它还将被添加至发往此服务器的请求首部
+                                addr：
+                                param：
+				    backup: 设定当前server为backup server，只有在所有服务都不可用时才启用
+                                    cookie <value>：设定当前server的cookie值，用于实现cookie的会话粘性
+				    maxconn: 此服务接受的并发连接的最大数量；
+				    maxqueue: 请求队列的最大长度；
+				    observe: 根据流量判断后端server的健康状态；
+				    weight: 指定权重，默认为1，最大为256；0表示不被调度；
+				    redir <prefix>: 将发往此服务器的所有get和head请求重定向至指定的地址；所有发往此服务器的请求均以302响应；
+				    check: 无check时默认后端主机始终可用；当有check时，可以有如下辅助参数
+                                           port：基于此端口做健康状态检测
+                                           addr: 可以通过此地址做健康状态检测，不对check前面server的addr做检测
+					   inter <delay>：检测时间间隔；单位为ms, 默认为2000; 
+					   fall <count>: up --> down, soft state, soft state, hard state; 连续多少检测失败后，认为后端server坏掉了
+					   rise <count>：down --> up, 连续多少检测成功后，认为后端server恢复了
+                                    注意：当只有check，无辅助参数时，基于check前面server的addr做tcp连接检测
+检测分为3个层次：
+        基于应用协议做健康状态检测，即7层检测，效果最好
+        基于tcp层做健康状态检测，即4层检测
+        基于ip层做健康状态检测，即3层检测
+	后端为http服务时的健康状态的检测方法，即7层检测
+	option httpchk 默认请求主页
+        option httpchk <uri> 请求指定的uri 
+        option httpchk <method> <uri>
+        option httpchk <method> <uri> <version>
+35-5
+       cookie的使用方式
+       cookie <name> [rewrite/insert/prefix]
+                     rewrite:重写整个cookie
+                     insert：插入新的cookie值到已有cookie中（常用）
+                     prefix：把新cookie值写到最前面
+                     nocache
+                     indirect
+        添加请求或响应报文首部：
+        option forwardfor:在发往后端主机的请求报文中增加X-forwarded-For首部，其值为客户端地址
+        option forwardfor [except <network>] [header <name>]
+                       except <network> 来自于本网络的请求不添加
+                       header <name> 可以自定义header，而不采用X-forwarded-For
+        reqadd  <string> [{if|unless} <condtion>]请求报文尾部添加自定义的header
+        reqidel <search> [{if|unless} <condtion>]忽略大小写
+        reqdel  <search> [{if|unless} <condtion>]基于模式删除匹配到的请求报文中的header及其值
+	errorfile <code> <file>错误响应：
+	        errorfile: 使用haproxy主机本地文件进行响应；
+		errorloc(location), errorloc302: 使用指定的url进行响应，响应状态码为302；不适用于GET以外的其它请求方法；
+		errorloc303：返回303状态码；
+35-6
+ACL：定义，及调用；
+        acl <alname> <criterion> [flags] [operator] [value]
+        重点是criterion：
+               method
+               status
+               http_request  {allow|deny|auth} [{if|unless}] <condition>
+               http_response {allow|deny|auth} [{if|unless}] <condition>
+               tcp_request   {allow|deny|auth} [{if|unless}] <condition>
+               tcp_response  {allow|deny|auth} [{if|unless}] <condition>
+               dst IP
+               dst_port PORT
+               src IP
+               src_port PORT
+               path(指的就是uri）
+               path_beg
+               path_end
+               path_dir
+               path_domain
+               path_len
+               path_len
+               path_reg
+               path_sub
+               url
+               url_beg
+               url_end
+               url_dir
+               url_dom
+               url_len
+               url_len
+               url_reg
+               url_sub
+               urlp(<name>[,<define>]):string   表示检查请求报文的url参数的值
+               req.hdr([<name>][,<occ>]:string
+                   hdr
+                   hdr_beg
+                   hdr_end
+                   hdr_dir
+                   hdr_dom
+                   hdr_len
+                   hdr_len
+                   hdr_reg
+                   hdr_sub
+               resp.hdr([<name>][,<occ>]:string
+                   hdr
+                   hdr_beg
+                   hdr_end
+                   hdr_dir
+                   hdr_dom
+                   hdr_len
+                   hdr_len
+                   hdr_reg
+                   hdr_sub
+具体配置案例........................................................................................................................................................
+uri或hdr实现调度的配置案例：
+                        vim /etc/haproxy/haproxy.cfg
+                        listen webserver  *:80
+                               balance roundrobin|static-rr|leastconn|source|uri|url_param <param>|hdr(HEADER)   都是调度算法，选择其一就可以
+                               server server1 192.168.139.145:80 check   默认基于server的ip地址做tcp连接检测
+                               server server2 192.168.139.200:80 check 
+简单代理配置案例：
+                        vim /etc/haproxy/haproxy.cfg
+			frontend main *:80
+				default_backend websrvs
+			backend websrvs
+				balance roundrobin
+				server web1 172.16.100.68 check
+				server web2 172.16.100.69 check
+基于浏览器cookie实现session sticky的使用案例：
+                        vim /etc/haproxy/haproxy.cfg
+                        frontend main *:80
+				default_backend websrvs
+			backend websrvs
+			    balance     roundrobin
+			    cookie SERVERID insert nocache indirect      （都是cookie的参数）
+			    server web1 172.16.100.68:80 check weight 1 cookie websrv1
+			    server web2 172.16.100.69:80 check weight 3 cookie websrv2
+			要点：
+				(1) 每个server有自己惟一的cookie标识；
+				(2) 在backend中定义为用户请求调度完成后操纵其cookie
+动静分离+基于cookie实现会话绑定的案例：
+                        vim /etc/haproxy/haproxy.cfg
+			frontend  main
+			    bind *:80
+			    acl url_static              path_beg       -i /static /images /javascript /stylesheets  url_static是什么意思没有很明白
+			    acl url_static              path_end       -i .jpg .gif .png .css .js
+			    use_backend static          if url_static
+			    default_backend             appsrvs
+			#---------------------------------------------------------------------
+			# static backend for serving up images, stylesheets and such
+			#---------------------------------------------------------------------
+			backend static
+			    balance roundrobin 
+			    server static1 172.16.100.11 check 如何实现check
+			    server static2 172.16.100.12 check
+			backend appsrvs
+			    balance     roundrobin
+			    option forwardfor except 127.0.0.1 header X-Client 自定义一个X-Client，其值为客户端地址
+			    option httpchk                                     后端http服务时的健康状态的检测方法，默认是请求主页
+			    cookie SERVERID insert indirect nocache
+			    server  web1 172.16.100.7:80 check cookie web1
+			    server  web2 172.16.100.8:80 check cookie web2
+启用stats即管理界面的案例：
+                        vim /etc/haproxy/haproxy.cfg
+			listen statistics      也可以 listen statistics  *：9090，省掉bind *:9090语句
+			    bind *:9090        只能用于frontend, listen，表示监听的地址端口
+			    stats enable       有默认参数
+			    stats hide-version
+			   #stats scope .
+			    stats uri /haproxyadmin?stats     统计页的访问URI前缀，通常要跟上？stats
+			    stats realm "HAPorxy\ Statistics" 认证时出现的字符串，\表示转移字符，把空格表示出来
+			    stats auth admin:chenhao           user:passwd
+			    stats admin if TRUE	
+使用Firefox查看http报文的具体操作步骤：
+         1）在Firefox的Tools---Add-ons--在搜索行中输入Firebug，然后安装
+         2）在Firefox的Tools---Web Developer--Firebug--Firebug open 确认Firebug是否已经安装成功
+         3）在第2步中打开的页面开启net功能，重新加载页面即可查看http报文的详细信息
+作业：用keepalived高可用haproxy的具体操作步骤如下
+      在上面的（简单代理配置案例）成功的基础上，在haproxy节点A做如下操作
+       1）yum install -y keepalived 
+       2) vim /etc/keepalived/keepalived.conf
+global_defs {
+   notification_email {
+     acassen@firewall.loc
+     failover@firewall.loc
+     sysadmin@firewall.loc
+   }
+   notification_email_from Alexandre.Cassen@firewall.loc
+   smtp_server 192.168.139.192
+   smtp_connect_timeout 30
+   router_id LVS_DEVEL
+}
+vrrp_instance VI_1 {
+    state MASTER
+    interface eth1
+    virtual_router_id 51
+    priority 100
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 1111
+    }
+    virtual_ipaddress {
+        192.168.139.100/24 dev eth1 label eth1:0
+    }
+}
+     3) service keepalived start 
+     4) ifconfig 查看eth1:0的地址是否有出现
+     在haproxy节点B做同样的操作安装好haproxy和keepalived
+     验证：
+     5）在haproxy节点A执行curl http://192.168.139.100,看能否轮询访问后端主机
+     6）在haproxy节点A执行service keepalived stop 
+     7) 在haproxy节点B执行ifconfig查看eth1:0的地址是否有出现
+     8）在haproxy节点B执行curl http://192.168.139.100,看能否轮询访问后端主机

@@ -1,0 +1,928 @@
+﻿缓存的分类，缓存按照存放的地点不同，可以分为服务端缓存和客户端缓存，从另外一个角度看缓存也是分层级的
+服务端缓存分为
+  页面缓存
+  数据缓存
+  数据库缓存
+客户端缓存分为，客户端缓存就是把缓存保存在除Web服务器之外的其他地方，加速同一客户端访问相同资源时的速度
+  浏览器缓存
+  代理服务器缓存
+  网关缓存
+下面针对部分缓存做说明
+
+1.数据缓存
+将从数据库查询的结果或是需要多服务器共享的数据缓存到内存或者文件中，以便再次访问同一资源时无需再次对数据库进行访问，提高请求数据的响应速度以及降低数据库的负载。
+目前缓存的做法分为两种模式:
+内存缓存：缓存数据存放在服务器的内存空间中，现在常用的内存缓存有Redis以及Memcached。
+优点：速度快
+缺点：资源有限
+文件缓存：缓存数据存放在服务器的硬盘空间中。
+优点：容量大
+缺点：速度偏慢，尤其在缓存数量巨大时
+
+2.数据库缓存
+一般指数据库服务自带的缓存，比如mysql自带的缓存
+
+3.浏览器缓存
+服务器通过设置请求返回的HTTP头，来通知浏览器按照服务器的要求进行响应的缓存。主要使用到如下4个HTTP响应首部：
+   Expires: 过期时间。这种缓存是最快的，因为没有任何HTTP请求的发生。当用户需要这个资源的时候，浏览器就直接从缓存（在硬盘中）读取，不再需要询问服务器端的意见。
+   Last-Modified: 最后修改时间。通过这种缓存方式，无论资源是否发生了更新，仍然至少会发生一来一去HTTPS头的传输和接收，所以速度比不上Expires。
+   ETag: 实体标签。和Last-Modified类似，也是WEB服务器和客户端用于确认缓存组件的有效性的一种机制。当资源被修改，其ETag也发生改变。
+         ETag相对Last- Modified更精确，但在多服务器可能造成混乱。
+   Cache-Control: 缓存控制。这个字段用于指定所有缓存机制在整个请求/响应链中必须服从的指令。这些指令指定用于阻止缓存对请求或响应造成不利干扰的行为。
+                  比如：Cache-Control: max-age=3600, public
+4.代理服务器缓存
+  代理服务器缓存以共享缓存的方式保存着报文副本，可以减少客户端到原始服务器的长距离请求，比如varnish、squid、nginx
+
+
+web cache server方案varnish、squid、nginx对比
+1)从功能上说：varnish和squid是专业的cache服务，而nginx的cache功能是由第三方模块完成。
+2)要做cache服务的话，肯定是要选择专业的cache服务，优先选择squid和varnish。
+Varnish 可以认为是内存缓存，速度一流，但是内存缓存也限制了其容量，缓存页面和图片一般是挺好的；
+varnish本身的技术上优势要高于squid，它采用了“Visual Page Cache”技术，在内存的利用上，Varnish比Squid具有优势，它避免了Squid频繁在内存、磁盘中交换文件，性能要比Squid高。
+varnish是不能cache到本地硬盘上的。
+Varnish可以使用正则表达式快速、批量地清除部分缓存
+varnish的内存管理完全交给内核，当缓存内容超过内存阈值时，内核会自动将一部分缓存存入swap中让出内存
+varnish没有专门的存储引擎
+
+squid是功能最全面的比较传统的web cache server，有自己的存储引擎,但是架构太老，性能不怎样。
+squid可以用于缓存更多更大的内容，属于专业用于缓存的功能，比如尤其适合缓存图片、文档等；
+squid支持正向代理缓存，而这方面varnish、nginx cache做不到
+
+nginx本来是反向代理/web服务器，用了proxy_cache插件可以做做这个副业，但是本身不支持的性能比较多。
+nginx cache性能基本达到varnish，但在架构中nginx一般作为反向（静态文件现在用nginx的很多，并发能支持到2万+）。
+在静态架构中，如果前端直接面对的是CDN活着前端了4层负载的话，完全用nginx的cache就够了。
+nginx也没有专门的存储引擎
+
+34-1
+补充说明：
+varnish的主要的动作有
+pass: 表示不查看缓存，varnish将请求直接转发给后端服务器，
+lookup: 从hash表中查找数据。
+pipe: 在client和backend之间建立一条连接，varnish不会看它们之间传送的数据。
+      由于HTTP1.1中一个连接可以传输客户端的多个请求，所以应该通知varnish增加一个"Connection: close"的头部。
+deliver: 将获取到的数据发送给客户端，完成本次请求。
+purge就是CDN删除缓存项的接口
+补充术语：
+GSLB：全局服务负载均衡
+LSSB：本地服务负载均衡
+Varnish在整个web的架构中，处于前端负载均衡与后端server之间
+Web Cache
+	程序具有局部性:(因此cache才有存在的作用)
+		时间局部性（一个数据被访问后，有可能很快会被再次访问，所以把这个数据提前加载）
+		空间局部性（一个数据被访问后，周边数据可能很快会被访问，所以把周边数据提前加载）
+        补充内容：
+         1）I/O的解释
+            如要访问/var/log/message,则要先找到var，就是一次IO，然后再找log，又是一次IO，。。。。
+         2）nginx在做负载均衡时，自身可以实现proxy_cache功能，但是在实际生产中，一台主机最好只扮演一个角色，所以需要另外一台主机来做cache，提高性能
+	 3）缓存数据格式key-value:
+			key: 访问路径，URL, hash
+			value：web content	
+	热点数据：（热点数据加缓存才有意义）	
+	命中率的计算方式：hit/(hit+miss)	
+		文档命中率：从文档个数进行衡量；
+		字节命中率：从内容大小进行衡量；
+	注意：
+	缓存生命周期：ttl，缓存生命周期一般由后端原始服务器指定时长，但是缓存服务器可以忽略该设置，自行修改缓存时长，
+                      但这样有可能导致原始服务器内容已经更新，缓存服务器内容还没用更新的恶果
+        解决办法就是定期清理；
+                         缓存项过期
+		         缓存空间耗尽：LRU（最近最少使用）
+       是否可以缓存的条件：
+		        用户私有数据不可缓存
+                        公共数据可以缓存
+	缓存处理的步骤：
+		接收请求 --> 解析请求（提取请求的URL及各种首部）--> [查询缓存 --> 新鲜度检测(即检测缓存是否有效）] --> 创建响应报文 --> 发送响应 --> 记录日志
+        补充内容：
+              1）缓存可以有很多级，比如用户自己的浏览器有缓存，中间有缓存，，，，，
+              2) 在CDN中，解析返回给用户一个最近的主机有两种实现方式
+                          a、DNS智能解析
+                          b、GSLB，全局服务负载均衡，即把所有主机请求都汇总到一台主机上，然后由该台主机寻找离用户最近的服务器
+	缓存控制机制：
+		过期日期：
+			HTTP/1.0 Expires                   绝对日期
+				 Expires:Thu, 04 Jun 2015 23:38:18 GMT
+			HTTP/1.1 Cache-Control: max-age    相对日期
+				 Cache-Control:max-age=600
+                Cache-Control（该选项可以出现在请求报文和响应报文中） 
+	        可以出现在请求报文中的Cache-Control有如下属性值，一个请求报文只能出现如下其中一个属性值
+	           "no-cache"   （可以接受缓存，但响应前要查询原始服务器）                       
+	         | "no-store"    (不接受缓存内存)                          
+	         | "max-age" "=" delta-seconds        只接受Age值小于max-age值，并且没有过期的对象         
+	         | "max-stale" [ "=" delta-seconds ]  可以接受过期的对象，但是过期时间必须小于max-stale值
+	         | "min-fresh" "=" delta-seconds      接受其新鲜生命期大于其当前Age跟min-fresh 值之和的缓存对象
+	         | "no-transform"                      
+	         | "only-if-cached"                   
+	         | cache-extension                   
+	       可以出现在响应报文中的Cache-Control有如下属性值，一个响应报文只能出现如下其中一个属性值）
+	           "public"                                可以用Cached 内容回应任何用户
+	         | "private" [ "=" <"> 1#field-name <"> ]   只能用缓存内容回应先前请求该内容的那个用户
+	         | "no-cache" [ "=" <"> 1#field-name <"> ]（可以缓存，但响应前要查询原始服务器）
+	         | "no-store"  （不能缓存）                          
+	         | "no-transform"                         
+	         | "must-revalidate"  （必须向原始服务器校验内容）                   
+	         | "proxy-revalidate"                    本响应包含对象的过期时间
+	         | "max-age" "=" delta-seconds            
+	         | "s-maxage" "=" delta-seconds （可以放在公共缓存服务器上的最大maxage）          
+	         | cache-extension 
+
+x-cache是squid代理的自定义header,用来记录缓存的命中与否
+-----------------详细的http首部解释-----------------
+http headers：
+                通用首部：也就是可以同时出现在请求报文和响应报文中的首部；
+                请求首部：--重要
+                响应首部：
+                实体首部：描述body的长度和内容格式等；--重要
+                扩展首部：规范中未定义的新首部；比如X-Forward-For首部，该首部的值就是客户端地址
+                通用首部：
+                        Date: 报文的创建时间；
+                        Connection: 指定请求/响应有关的选项
+                        Via: 显示报文经过的代理服务器信息；
+                        Cache-Control: 缓存控制,该缓存控制项有很多属性值，请求报文和响应报文都有，具体参考varnish
+                        Pragma：主要使用Pramga:no-cache，相当于Cache-Control:no-cache。例如Pragma：no-cache
+                        Trailer：报文末端的首部一览
+                        Transfer-Encoding：WEB服务器表明自己对本响应消息体(不是消息体里面的对象)做的编码格式，比如是否分块（chunked）。例如Transfer-Encoding: chunked
+                请求首部：
+                        信息性首部：
+                                Client-IP
+                                Host: 被请求的服务器的主机名和端口号
+                                Referer：包含了当前请求的资源的URL的上一级资源；
+                                User-Agent：UA
+                        Accept首部：
+                                Accept: 通知服务器能够发送的媒体的类型，MIME
+                                Accept-Charset：接受的字符集
+                                Accept-Encoding: 通知服务器能够发送的压缩格式，例如gzip
+                                Accept-Language： 通知服务器能够发送的语言
+                        条件式请求首部：
+                                Expect：
+                                If-Modified-Since：自从指定的时间之后是否发生了改变；对应响应首部last-modified
+                                If-Unmodified-Since：
+                                If-None-Match: 本地缓存的文档的ETag与服务器端的文档的Etag是否不匹配；对应响应首部ETag；Etag实际就是校验码，
+                                If-Match:
+                                If-Range：浏览器告诉WEB服务器，如果我请求的对象没有改变，就把我缺少的部分给我，如果对象改变了，就把整个对象给我。
+                                          浏览器通过发送请求对象的ETag或者自己所知道的最后修改时间给WEB服务器，让其判断对象是否改变了。总是跟Range头部一起使用
+                        安全请求首部：
+                                Authorization: 向服务器发送认证信息；
+                                Cookie：客服端向服务器发送的身份标识；
+                                Cookie2：
+                        代理请求首部：
+                                Proxy-Authorization：与Authorization相似，代理用于认证客户端的信息
+                        响应首部：
+                        信息性首部：
+                                Age：当代理服务器用自己缓存的实体去响应请求时，用该头部表明该实体从产生到现在经过多长时间了
+                                Server：HTTP服务器的安装信息
+                        协商首部：
+                                Vary：WEB服务器用该头部的内容告诉Cache 服务器，在什么条件下才能用本响应所返回的对象响应后续的请求。
+                                      假如源WEB服务器在接到第一个请求消息时，其响应消息的头部为：Content-Encoding: gzip; Vary: Content-Encoding
+                                      那么Cache服务器会分析后续请求消息的头部，检查其Accept-Encoding，是否跟先前响应的Vary 头部值一致，
+                                 即是否使用相同的内容编码方法，这样就可以防止 Cache 服务器用自己 Cache 里面压缩后的实体响应给不具备解压能力的浏览器。例如：Vary：Accept-Encoding
+                        安全响应首部：
+                                WWW-Authentication：服务器对客户端认证信息；
+                                Set-Cookie：向客户端发送身份令牌；
+                                Set-Cookie2
+                                Proxy-Authentication：代理服务器对客户端的认证信息
+                实体首部：
+                        信息性首部：
+                                Allow：列出对当前实体可发出的请求方法
+                                Location：WEB服务器告诉浏览器，试图访问的对象已经被移到别的位置了，到该头部指定的位置去取
+                        内容首部：
+                                Content-Encoding：WEB服务器表明自己使用了什么压缩方法（gzip，deflate）
+                                Content-Language：实体的语言
+                                Content-Lenth:实体的大小（单位：字节）
+                                Content-Location:替代对应资源的URI
+                                Content-Type:实体的媒体类型
+                                Content-Range： WEB 服务器表明该响应包含的部分对象为整个对象的哪个部分。例如：Content-Range: bytes 21010-47021/47022
+                                Accept-Ranges：WEB服务器表明自己是否接受获取其某个实体的一部分(比如文件的一部分)的请求。bytes：表示接受，none：表示不接受
+                        缓存首部：
+                                ETag：实体标记
+                                Expires：实体过期时间；
+                                Last-Modified: 最后的一次修改时间
+
+请求和响应报文案例1：
+Remote Address:106.120.188.48:80  
+Request URL:http://fanyi.sogou.com/static/css/app.f8e1120b.css
+Request Method:GET
+Status Code:200 OK
+
+Request Headersview source---请求首部
+Accept:text/css,*/*;q=0.1
+Accept-Encoding:gzip,deflate,sdch
+Accept-Language:zh-CN,zh;q=0.8
+Cache-Control:no-cache
+Connection:keep-alive
+Cookie: ..................
+Host:fanyi.sogou.com
+Pragma:no-cache    相当于Cache-Control:no-cache
+Referer:http://fanyi.sogou.com/?fr=websearch_submit&pid=&keyword=Cascading%20Style%20Sheet
+User-Agent:Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.122 Safari/537.36 SE 2.X MetaSr 1.0
+
+Response Headersview source---响应首部
+Accept-Ranges:bytes
+Connection:keep-alive
+Content-Encoding:gzip
+Content-Length:8365
+Content-Type:text/css
+Date:Mon, 02 Oct 2017 11:17:29 GMT
+ETag:"59b0fc6f-756b"
+Last-Modified:Thu, 07 Sep 2017 07:59:43 GMT
+P3P:CP='CURa ADMa DEVa PSAo PSDo OUR BUS UNI PUR INT DEM STA PRE COM NAV OTC NOI DSP COR'
+Proxy-Connection:keep-alive
+Server:nginx---服务器的安装信息
+Vary:Accept-Encoding   参照上面vary的解释
+
+请求和响应报文案例2：
+General 
+Remote Address:14.215.177.38:443 这是服务器地址
+Request URL:https://www.baidu.com/
+Request Method:GET
+Status Code:200 OK
+
+Response header
+Bdpagetype:2
+Bdqid:0xc3fb14280003a32e
+Bduserid:2137909505
+Cache-Control:private  响应报文的Cache-Control属性值
+Connection:Keep-Alive
+Content-Encoding:gzip
+Content-Type:text/html;charset=utf-8
+Date:Tue, 12 Sep 2017 01:03:41 GMT
+Expires:Tue, 12 Sep 2017 01:03:41 GMT
+Server:BWS/1.1
+Set-Cookie:BD_HOME=1; path=/
+Set-Cookie:BDSVRTM=238; path=/
+Set-Cookie:H_PS_PSSID=1456_21106_18559_17001_20927; path=/; domain=.baidu.com
+Strict-Transport-Security:max-age=172800
+Transfer-Encoding:chunked
+X-Ua-Compatible:IE=Edge,chrome=1
+
+Request header
+Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Encoding:gzip, deflate, sdch
+Accept-Language:zh-CN,zh;q=0.8
+Cache-Control:max-age=0  请求报文的Cache-Control属性值
+Connection:keep-alive    保持链接
+Cookie:BAIDUID=......
+
+34-2
+         有效性再验正：revalidate
+	       如果原始内容未改变，则仅响应首部（不附带body部分），响应码304 （Not Modified）
+	       如果原始内容发生改变，则正常响应，响应码200；
+	       如果原始内容消失，则响应404，此时缓存中的cache object也应该被删除；
+         条件式请求首部：
+                If-Modified-Since：（常用）出现在请求报文首部中，基于请求内容的时间戳作验正；对应响应首部last-modified
+		If-Unmodified-Since：
+		If-Match：
+		If-None-Match：（常用）基于Etag的比较进行，Etag实际就是校验码，用于判断内容是否改变，如Etag: faiy8934
+补充内容：
+          1）按F5或shift+F5表示刷新本地浏览器缓存
+          2）过期日期+条件式请求首部的搭配
+             如果expire是过期的，用If-None-Match来判断内容是否有改变
+
+常见的http cache缓存服务开源解决方案：varnish和squid(两者之间的关系类似nginx --> apache)
+		官网是https://www.varnish-cache.org
+                yum install varnish（epel源即可） 
+                varnish最好安装在Centos7上，一个原因是Centos7上的版本是最新的，另外一个原因是Centos6上的varnish似乎用起来有问题
+		DSL: vcl（varnish configration language）
+		管理进程：编译VCL并应用新配置；监控vanish；初始化varnish；CLI接口；具体架构查看varnish架构 PDF文档
+		Child/cache：
+			Acceptor：接收新的连接请求；
+			worker threads：处理用户请求；
+			Expiry：清理缓存中的过期对象；
+                Varnish可以基于文件系统接口进行访问共享内存区域来记录日志(Shared Memory Log，共享内存日志大小默认一般为90MB)--缓存的内容放在哪里？
+                记录日志分为两部分
+                      前一部分为计数器(命中数，连接数等)
+                      后一部分请求相关的数据，即实际的缓存内容；
+                vcl: Varnish Configuration Language
+			缓存策略配置接口；
+			基于“域”的简单编程语言；（联想iptables的路径，即钩子函数），用{}包含起来
+		内存分配和回收：
+			malloc(), free()
+                varnish如何存储缓存对象：（常用file和malloc）
+			file: 单个文件；不支持持久机制；自管理的文件系统，黑盒
+			malloc: 内存；在varnish启动时，使用malloc库向内存请求指定大小的空间
+			persistent：与file功能相同，但是系统重启后，配置任然有效，基于文件的持久存储；（处于测试期）
+              使用varnishd –h或man varnishd查看如何存储缓存对象，实际就是centos7中的/etc/varnish/varnish.params或centos6中的/etc/sysconfig/varnish配置参数
+                      -s malloc [,<size>]
+                      -s file [,path [,size [,granularity增长率]]]
+                      -s persistent ,path，size
+              配置varnish的三种方式：
+			1、varnishd应用程序的命令行参数；
+				监听的socket, 使用的存储类型等等；额外的配置参数；
+					-p param=value，可以同时设置多个 
+					-r param,param,... : 设定只读参数列表；
+                                 对应修改/etc/varnish/varnish.params
+			2、-p选项指明的参数：
+				运行时参数：也可在程序运行中，通过其CLI进行配置；
+			3、vcl：配置缓存系统的缓存机制；
+				通过vcl配置文件进行配置；
+				先编译，后应用；依赖于c编译器；
+                        centos7
+                            配置进程特性：/etc/varnish/varnish.params
+                            配置缓存策略：vcl配置文件default.conf
+                        centos6
+                            配置进程特性：/etc/sysconfig/varnish
+                            配置缓存策略：vcl配置文件default.conf
+                     特别说明： 缓存服务器不能随意重新启动，因为重新启动之前的缓存项会失效
+34-3
+varnish:v2, v3, v4(v3和V4有很多内置变量不同，要注意区别,视频里面讲的V4版）
+		vcl state engine：状态引擎
+                       各引擎之间存一定程度上的相关性；
+                       前一个engine如果可以有多种下游engine，则上游engine需要用return（x）指明要转移的下游engine，如return（hash），表示进入vcl_hash
+                 state engine(v4)---该流程很重要，版本不一样具体叫法有点差异
+				vcl_recv
+				vcl_pass
+				vcl_pipe     请求报文的方法不是get，put等常规的，直接转交给后端主机
+				vcl_hash
+				vcl_hit
+				vcl_miss
+				vcl_backend_fetch
+				vcl_backend_response
+				vcl_backend_error
+				vcl_purge（清除）
+				vcl_synth（同步）
+                                vcl_error
+                                vcl_deliver  表示varnish服务器发送响应报文给客户端
+                https://www.varnish-software.com/book/4.0/chapters/VCL_Basics.html（查看具体的流程）  
+		VCL编程语言语法：
+			(1) //, #, /* */ 用于注释；会被编译器忽略；
+			(2) sub $name: 用于定义子例程；（name指的是vcl_recv，vcl_hash等）
+				sub vcl_recv {
+                                     。。。。。
+                                 }
+			(3) 不支持循环；
+			(4) 有众多内置的变量（没有找到具体的内置变量在哪里），变量的可调用位置与state engine如有密切相关性；
+                            (如vcl_recv，vcl_hash所使用的变量是不同的，联想iptables）
+			(5) 支持终止语句，return(action)；没有返回值；
+			(6) "域"专用；
+			(7) 操作符：=, ==, ~, , &&, ||
+			条件判断语句：
+				if (CONDTION) {
+
+				} else {
+
+				}
+			变量赋值：set name=value
+				  unset name
+				  req.http.HEADER：调用request报文中http协议的指定的HEADER首部；
+					req.http.X-Forwarded-For    X-Forwarded-For对应的是客户端地址
+					req.http.Auhtorization
+					req.http.cookie
+				  req.request: 请求方法，V4版中已经修改为req.method
+				  client.ip: 客户端IP；
+                       数据报文处理工作流程：（针对的是V4版）
+                                （1）请求为可缓存且命中，通过本地缓存响应
+				     vcl_recv --> vcl_hash --> vcl_hit --> vcl_deliver
+                                （2）请求为可缓存但未命中，到后端服务器取相关内容
+                                      （a）可缓存对象，先缓存再响应
+                                                  定义缓存时间
+                                                  自定义缓存键
+                                      （b）不可缓存，直接响应
+				     vcl_recv --> vcl_hash --> vcl_miss -->[vcl_pass -->] vcl_backend_fetch --> vcl_deliver
+                                （3）请求为不可缓存，到后端服务器取相关内容直接响应
+				     vcl_recv --> vcl_pass --> vcl_backend_fetch --> vcl_deliver(请求内容为不能缓存）
+				 (4) vcl_recv --> vcl_pipe管道（请求报文的方法不是get，put等常规的，直接转交给后端主机）                                                
+34-4
+		varnish中的内置变量
+			变量种类：比较常用的种类就是req，beresp，obj
+				client.*
+				server.*
+				req.*--重要
+				resp.*
+				bereq.*
+				beresp.*--重要
+				obj.*  --重要
+				storage.*
+                                常用变量如下
+                                req：由client发往varnish的请求报文  
+                                        req.backend 指定对应的后端主机
+                                        req.http.x-forwarded-for http请求中的源地址
+                                        req.http.Authorization http请求中的用户认证信息
+                                        req.method 指定请求的类型，例如GET、HEAD、POST等
+                                        req.url 指定请求的地址
+                                        req.http.Cookie http请求中的cookie信息
+                                        req.http.host 客户端请求的域名或者IP地址
+                                        req.restarts表示请求重试的次数
+				bereq：由varnish发往backend server的请求报文
+					bereq.http.HEADER: 由varnish发往backend server的请求报文的指定首部；
+					bereq.method：请求方法；
+					bereq.url：
+					bereq.proto：
+					bereq.backend：指明要调用的后端主机；
+				beresp：由backend server发往varnish的响应报文
+					beresp.proto
+					beresp.status：后端服务器的响应的状态码
+					beresp.reason：原因短语；
+					beresp.backend.ip
+					beresp.backend.name后端服务器名称
+					beresp.http.HEADER: 从backend server响应的报文的首部；
+					beresp.ttl：后端服务器响应的内容的余下的生存时长（即缓存时长）；
+				obj：存储在缓存空间中的缓存对象，一般为只读属性
+					obj.ttl:  对象的ttl值（即后端服务器告诉varnish cache服务器可以缓存的时间）；
+					obj.hits：此对象从缓存中命中的次数；
+                                server
+					server.ip
+					server.hostname
+                                        server.port
+                                client
+                                        client.ip
+					client.hostname
+                                        client.port
+                                resp：由varnish发往client的响应报文，参照beresq的各值
+                               自定义 set
+			       官方文档：https://www.varnish-cache.org/docs/4.0/reference/vcl.html#varnish-configuration-language
+                               官方配置示例：https://www.varnish-cache.org/trac/wiki/VCLExamples
+
+34-5
+	backend server的定义：
+		backend name {
+		    .attribute = "value";
+		}	
+		.host: backend主机的IP；
+		.port：backend主机监听的PORT；
+		.probe: 对BE做健康状态检测；
+		.max_connections：并连接最大数量；
+	后端主机的健康状态检测方式：
+		probe name {
+		     .attribute = "value";
+		}	
+
+		.url: 判定BE健康与否请求的url; 
+		.expected_response：期望响应状态码；默认为200；
+	掌握：varnishlog, varnishncsa, varnishtop, varnishstat等命令行工具
+	命令行工具：
+			1）varnishadm -S /etc/varnish/secret -T IP:PORT（通过6082端口，可连接到管理界面，类似mysql命令）
+                           varnish>help
+                           varnish>vcl.load <configurename> <filename>，编译filename文件，configurename是自定义文件名
+                        如下2）和3）两种日志格式选其一即可
+                        2）varnishlog，或者执行systemctl start varnishlog.service   以原始格式记录varnish日志
+使用案例
+[root@localhost varnish]# varnishlog  此时需要在浏览器中刷新访问下
+*   << BeReq    >> 102       
+-   Begin          bereq 101 pass
+-   Timestamp      Start: 1505310380.124058 0.000000 0.000000
+-   BereqMethod    GET
+-   BereqURL       /login/
+-   BereqProtocol  HTTP/1.1
+-   BereqHeader    Host: 192.168.139.180
+-   BereqHeader    User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0
+.....后面还有很多信息
+			3) varnishncsa,或者执行systemctl start varnishncsa.service  以combined格式记录varnish日志
+使用案例
+[root@localhost varnish]# varnishncsa  此时需要在浏览器中刷新访问下
+192.168.139.180 - - [13/Sep/2017:21:45:43 +0800] "GET http://192.168.139.180/login/ HTTP/1.1" 200 61 "-" "Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0"
+                        4) varnishtop,日志排序，内存日志区域查看工具
+                           varnishtop的使用方式是，在命令行输入varnishtop，会出现list length 100字样，然后在浏览器中刷新下就会出现如下很多字段
+                           list length 100                                                                                                                              
+                           0.43 Begin          sess 0 HTTP/1
+                           0.43 Link           req 98 rxreq
+                           0.43 SessClose      RX_TIMEOUT 5.039
+                           0.43 SessOpen       192.168.139.180 48263 :80 192.168.139.180 80 1505308730.663649 15
+                           0.42 VCL_return     fetch
+                            .......................
+			   RxHeader User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.81 Safari/537.36
+			其中：
+				RxHeader：称为tag, 基于tag过滤，可使用-i或-x选项；
+				User-Agent起始的内容：称为日志信息，可使用-I或-X选项进行过滤；
+				-I regexp: 仅显示被模式匹配到的条目
+				-X regexp：仅显示不被模式匹配到的条目
+				-C: 忽略字符大小写；
+				-d: 显示已有日志；
+                        5）varnishstat（重要，用于缓存统计，主要就是抽取内存中的数据进行显示）
+			        -f field, field, ...
+			        -l: 列出所有可用字段
+			        -x: xml输出格式 
+			        -j: json输出格式
+补充资料：
+	varnish的线程模型：
+		cache-worker线程
+		cache-main线程：此线程只有一个，用于启动cache；
+		ban luker：
+		acceptor：
+		epoll：线程池管理器
+		expire：清理过期缓存
+		varnish定义其最大并发连接数：线程池模型：
+			thread_pools：线程池个数；默认为2；
+			thread_pool_max：单线程池内允许启动的最多线程个数；
+			thread_pool_min
+			thread_pool_timeout：thread_pool_min的线程空闲时间超过此参数指定的时长后即被purge；
+作业：
+           backend的调用+健康状态检测的定义--------已经实现，参考后续案例
+           负载均衡的实现--------------------------已经实现，参考后续案例
+           根据资源类型不同完成分发----------------已经实现，参考后续案例
+           控制哪些内容不查或查询缓存--------------已经实现，参考后续案例
+实际网络中有多层代理和多层缓存
+在Centos7上安装varnish
+yum install -y varnish
+配置进程特性
+vim /etc/varnish/varnish.params
+RELOAD_VCL=1
+VARNISH_VCL_CONF=/etc/varnish/default.vcl
+# VARNISH_LISTEN_ADDRESS=192.168.139.180 默认是监听本机的所有地址
+VARNISH_LISTEN_PORT=80  这里原本是6081，当你直接访问varnish服务时，建议修改为80
+VARNISH_ADMIN_LISTEN_ADDRESS=127.0.0.1
+VARNISH_ADMIN_LISTEN_PORT=6082 管理监听端口
+VARNISH_SECRET_FILE=/etc/varnish/secret
+VARNISH_STORAGE="malloc,256M"
+VARNISH_USER=varnish
+VARNISH_GROUP=varnish
+#DAEMON_OPTS="-p thread_pool_min=5 -p thread_pool_max=500 -p thread_pool_timeout=300"  如果启用该选项，可以实现永久设置参数
+systemctl start varnish.service 
+配置好进程特性后，先以如下案例进行操作
+案例1：在varnish 服务器响应给客户端的响应报文添加一个自定义首部X-Cache...................
+                                  vim /etc/varnish/default.vcl
+                                  backend web1 {
+                                          .host = "192.168.139.171";
+                                          .port = "8080";
+                                  }
+			          sub vcl_deliver{
+                                      if (obj.hits>0) {
+			                 set resp.http.X-Cache = "HIT via"+" "+server.ip;（+表示链接字符串，即长字符串；server.ip是一个内置变量）
+			                  } else {
+			                 set resp.http.X-Cahce = "MISS";
+			              }
+                                    }
+obj.hits>0表示缓存对象命中次数大于0，则resp.http.X-Cache首部值为HIT，否则为MISS。可以在浏览器的报文中查看验证
+使配置文件生效的操作步骤：
+[root@localhost ~]# varnishadm  -S /etc/varnish/secret  -T 127.0.0.1:6082  先连入管理接口
+200        
+-----------------------------
+Varnish Cache CLI 1.0
+-----------------------------
+Linux,3.10.0-327.el7.x86_64,x86_64,-smalloc,-smalloc,-hcritbit
+varnish-4.0.5 revision 07eff4c29
+Type 'help' for command list.
+Type 'quit' to close CLI session.
+help 
+200        
+help [<command>]
+ping [<timestamp>]
+auth <response>
+quit
+banner
+status
+start
+stop
+vcl.load <configname> <filename>  --常用
+vcl.inline <configname> <quoted_VCLstring>
+vcl.use <configname> --常用
+vcl.discard <configname>
+vcl.list  --常用
+param.show [-l] [<param>] --常用，列出运行时参数
+param.set <param> <value> --常用，设置运行时参数，但是服务重启失效，要想永久有效请修改/etc/varnish/varnish.params，开启#DAEMON_OPTS选项
+panic.show
+panic.clear
+storage.list  --常用，显示存储类型
+vcl.show [-v] <configname> --常用，显示配置文件参数
+backend.list [<backend_expression>]  --常用，显示后端主机
+backend.set_health <backend_expression> <state>
+ban <field> <operator> <arg> [&& <field> <oper> <arg>]...
+ban.list
+vcl.list 
+200        
+active          0 boot
+vcl.load test1 default.vcl   重新编译default.vcl成test1
+200        
+VCL compiled.
+varnish> vcl.list 
+200        
+active          0 boot   目前生效的是boot
+available       0 test1  可以用的是test1
+vcl.use test1    使test1配置文件生效
+vcl.list 
+200        
+available       0 boot
+active          0 test1
+vcl.show test1 可以显示出test1配置文件参数
+验证：在浏览器中输入http://192.168.139.180，如果能成功访问后端192.168.139.171，且可以看到已经增加了响应首部X-Cache说明配置成功
+注意：
+    192.168.139.180是varnish主机所在地址
+    Centos7中的Firefox不用安装firebug，直接在点击右上角的工具即可查看http报文
+
+后续所有的配置案例都参照如上步骤使配置文件生效
+案例2：移除单个缓存对象（varnish v4），purge用于清理缓存中的某特定对象及其变种(variants)，因此在有明确要修剪的缓存对象时可以使用此种方式。
+       HTTP协议的PURGE方法可以实现purge功能
+ vim /etc/varnish/default.vcl
+ backend web1 {
+    .host = "192.168.139.171";
+    .port = "8080";
+}
+sub vcl_deliver {
+if (obj.hits>0) {
+   set resp.http.X-Cache = "HIT via"+" "+server.ip;
+   } else {
+   set resp.http.X-Cahce = "MISS";
+}
+}
+acl purgers { 自定义一个purge子列程
+    "127.0.0.1";
+    "192.168.139.0"/24;
+}（做purge访问控制）
+sub vcl_purge {
+    return(synth(200,"purged"));
+}
+sub vcl_recv {
+    if (req.method == "PURGE") {
+       if (!client.ip ~ purgers) {
+          return(synth(405, "Method not allowed"+client.ip));
+          } else {
+          return (purge);
+          }
+    }
+}
+执行curl -X PURGE http://192.168.139.180 （大写X指明请求方法，即清除缓存,此时清除了所有缓存
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>200 purged</title>  这是自定义的purge  title ，说明清除缓存成功了
+  </head>
+  <body>
+    <h1>Error 200 purged</h1>
+    <p>purged</p>
+    <h3>Guru Meditation:</h3>
+    <p>XID: 65553</p>
+    <hr>
+    <p>Varnish cache server</p>
+  </body>
+</html>   
+然后再在浏览器中输入http://192.168.139.180 ，此时X-Cahce首部应该为MISS
+案例3：定义多个后端主机.............................
+                        因为此时是定义，所以不需要sub代码
+                        vim /etc/varnish/default.vcl
+			backend web1 {
+			    .host = "192.168.139.171";
+			    .port = "8080";
+			    
+			}
+			backend web2 {
+			    .host = "192.169.139.169";
+			    .port = "80";
+			   
+			}
+			sub vcl_recv {
+			    if (req.url ~ "(?i)\.(jpg|png|gif)$") {   (?i)表示不区分大小写，注意这里是i，不是！，语法很重要
+			        set req.backend_hint = web1;         （指明要调用的主机，此处web1不能用“”括起来）
+			    } else {
+			        set req.backend_hint = web2;
+			    }				
+			}
+验证：测试访问一个png文件是否调度到了web1
+案例4：负载均衡调度案.............................
+                       vim /etc/varnish/default.vcl
+                       import directors;  (加载directors模块，放在空白行处）
+                       backend web1 {
+                          .host = "192.168.139.171";
+                          .port = "8080";
+                          .probe = {
+			        .url = "/test1.html";
+                                .interval=1s;
+                                .windows=8;
+                                .threshold=5; (最近8次中有5次探测成功，才可以）
+                                .timeout=2
+			    }
+                       }
+                       backend web2 {
+                         .host = "192.168.139.169";
+                         .port = "80";
+                         .probe = {
+			        .url = "/test1.html";
+			    }
+                       }
+                      sub vcl_init {    自定义
+                        new cluster=directors.round_robin();  （负载均衡算法有fallback, random, round_robin, hash）
+                        cluster.add_backend(web1);
+                        cluster.add_backend(web2);
+                       }
+                      sub vcl_recv {
+                       set req.backend_hint=cluster.backend();  (set req.backend_hint=cluster.backend();必须单独写出来，而且放在最前面，否则配置不成功）
+                       if (req.url ~ "(?i)^/login") {  要想看出调度效果，就要不允许缓存。因此要明确指定/login不做缓存，才能看出负载均衡效果
+                       return(pass);
+                        }
+                      }     
+在192.168.139.171节点做如下操作
+   mkdir /var/www/html/login
+   vim  /var/www/html/login/index.html 
+        this is from 192.168.139.171 /var/www/html/login/index.html 
+在192.168.139.169节点做同样操作
+第一步验证：在浏览器中输入http://192.168.139.180/login，查看是否可以实现负载均衡效果 
+第二步验证：由于做了健康状态检测，所以可以尝试把192.168.139.171的http服务关掉，过一会再把http服务启动，
+            再次在浏览器中输入http://192.168.139.180/login，查看是否把192.168.139.171加入进来了，重新实现负载均衡效果 
+补充说明： .url = "/test1.html";可以用如下代码替换
+                          .request= {
+                                        "GET / HTTP/1.1"
+                                        "Host:192.168.139.180"
+                                        "Connection:close"(close表示短连接，keepalived表示持久连接）
+                           }
+简单配置案例...................................    
+				sub vcl_recv {
+				    if (req.method == "PRI") {  
+				        /* We do not support SPDY or HTTP/2.0 */（PRI表示是HTTP/2.0 内的方法，我现在不支持）
+				        return (synth(405));  synth同步
+				    }
+				    if (req.method != "GET" && req.method != "HEAD" && req.method != "PUT" && req.method != "POST" && req.method != "TRACE" &&
+				        req.method != "OPTIONS" &&req.method != "DELETE") {
+				        /* Non-RFC2616 or CONNECT which is weird. */
+				        return (pipe);  pipe表示交给后段服务器处理
+				    }
+                                }
+
+简单配置案例..................................
+                               sub vcl_recv {
+				    if (req.method != "GET" && req.method != "HEAD") {
+				        /* We only deal with GET and HEAD by default */
+				        return (pass);（不查询缓存）
+				    }
+				    if (req.http.Authorization || req.http.Cookie) {  都属于req.http.HEADER
+				        /* Not cacheable by default */
+				        return (pass);
+				    }
+				    return (hash);
+				}
+支持虚拟主机的案例...............................
+                           sub vcl_deliver{
+		               if (req.http.host == "www.magedu.com") {
+
+		               }
+                            }
+对/admin，/login资源的请求，强制不检查缓存............
+		             sub vcl_recv {
+                                   if (req.url ~ "(?i)^/login" || req.url ~ "(?i)^/admin") {
+			               return(pass);  （也就是跳过了vcl_hash）
+		                    }
+                             }                         
+对特定类型的资源取消其私有的cookie标识，并强行设定其可以varnish缓存的时长.........
+		sub vcl_backend_response {
+		        if (beresp.http.cache-control !~ "s-maxage") {
+			          if (bereq.url ~ "(?i)\.jpg$") {
+				         set beresp.ttl = 3600s;         强行设置后端服务器响应内容的余下的生存时长
+				         unset beresp.http.Set-Cookie;
+			           }
+			          if (bereq.url ~ "(?i)\.css$") {
+				         set beresp.ttl = 600s;
+				         unset beresp.http.Set-Cookie;
+			           } 
+		         }
+                }
+
+
+生产环境案例具体配置案例（现有视频中没有，可以借鉴）...............................
+		acl purge {
+		  "localhost";
+		  "127.0.0.1";
+		  "10.1.0.0"/16;
+		  "192.168.0.0"/16;
+		}
+		sub vcl_hash {
+		  hash_data(req.url);
+		  return (hash);
+		}
+		sub vcl_recv {
+		  set req.backend = shopweb; 为什么这里没有使用req.backend_hint
+	       #  set req.grace = 4h; 
+		  if (req.request == "PURGE") {
+		    if (!client.ip ~ purge) {
+		      error 405 "Not allowed.";
+		    }
+		      return(lookup);
+		  }
+
+
+		  if (req.request == "REPURGE") {
+		    if (!client.ip ~ purge) {
+		      error 405 "Not allowed.";
+		    }
+		    ban("req.http.host == " + req.http.host + " && req.url ~ " + req.url);
+		    error 200 "Ban OK";
+		  }
+		  if (req.restarts == 0) {
+		    if (req.http.x-forwarded-for) {
+		      set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
+		    } 
+		    else {
+		      set req.http.X-Forwarded-For = client.ip;
+		    }
+		  }
+		  if (req.request != "GET" &&
+		      req.request != "HEAD" &&
+		      req.request != "PUT" &&
+		      req.request != "POST" &&
+		      req.request != "TRACE" &&
+		      req.request != "OPTIONS" &&
+		      req.request != "DELETE") {
+		    /* Non-RFC2616 or CONNECT which is weird. */
+		      return (pipe);
+		  }
+		  if (req.request != "GET" && req.request != "HEAD") {
+		    /* We only deal with GET and HEAD by default */
+		    return (pass);
+		  }
+		  if (req.http.Authorization) {
+		    /* Not cacheable by default */
+		    return (pass);
+		  }
+		 
+
+		  if ( req.url == "/Heartbeat.html" ) {
+		    return (pipe);
+		  }
+		  if ( req.url == "/" ) {
+		    return (pipe);
+		  }
+		  if ( req.url == "/index.jsp" ) {
+		    return (pipe);
+		  }
+
+		  if (req.http.Cookie ~ "dper=") {
+		    return (pass);
+		  }
+		  if (req.http.Cookie ~ "sqltrace=") {
+		    return (pass);
+		  }
+		  if (req.http.Cookie ~ "errortrace=") {
+		    return (pass);
+		  }
+	      #   if ( req.request == "GET" && req.url ~ "req.url ~ "^/shop/[0-9]+$" ) {
+		  if ( req.url ~ "^/shop/[0-9]+$" || req.url ~ "^/shop/[0-9]?.*" ) {
+		    return (lookup);
+		  }
+
+		 if ( req.url ~ "^/shop/(\d{1,})/editmember" || req.url ~ "^/shop/(\d{1,})/map" || req.url ~ "^/shop/(\d+)/dish-([^/]+)" ) {
+		    return (lookup);
+		  } 
+
+		  return (pass);
+		#   return (lookup);
+		}
+
+		sub vcl_pipe {
+		  return (pipe);
+		}
+
+		sub vcl_pass {
+		  return (pass);
+		}
+
+		sub vcl_hit {
+		  if (req.request == "PURGE") {
+		    purge;
+		    error 200 "Purged.";
+		  }
+		  return (deliver);
+		}
+
+		sub vcl_miss {
+		  if (req.request == "PURGE") {
+		    error 404 "Not in cache.";
+		  }
+		#   if (object needs ESI processing) {
+		#     unset bereq.http.accept-encoding;
+		#   }
+		  return (fetch);
+		}
+		sub vcl_fetch {
+		  set beresp.ttl = 3600s;
+		  set beresp.http.expires = beresp.ttl;
+		  #set beresp.grace = 4h;
+		#   if (object needs ESI processing) {
+		#     set beresp.do_esi = true;
+		#     set beresp.do_gzip = true;
+		#   }
+
+		  if ( req.url ~ "^/shop/[0-9]+$" || req.url ~ "^/shop/[0-9]?.*" ) {   
+		    set beresp.ttl = 4h;
+		  }
+
+		 if ( req.url ~ "^/shop/(\d{1,})/editmember" || req.url ~ "^/shop/(\d{1,})/map" || req.url ~ "^/shop/(\d+)/dish-([^/]+)" ) {
+		     set beresp.ttl = 24h;
+		  } 
+
+		  if (beresp.status != 200){
+		    return (hit_for_pass);
+		  }
+		  return (deliver);
+		}
+
+		sub vcl_deliver {
+		  if (obj.hits > 0){
+		    set resp.http.X-Cache = "HIT";
+		  } 
+		  else {
+		    set resp.http.X-Cache = "MISS";
+		  }
+		  set resp.http.X-Powered-By = "Cache on " + server.ip;
+		  set resp.http.X-Age = resp.http.Age;
+		  return (deliver);
+		}
+
+		sub vcl_error {
+		  set obj.http.Content-Type = "text/html; charset=utf-8";
+		  set obj.http.Retry-After = "5";
+		  synthetic {""} + obj.status + " " + obj.response + {""};
+		  return (deliver);
+		}
+
+		sub vcl_init {
+		  return (ok);
+		}
+
+		sub vcl_fini {
+		  return (ok);
+		}

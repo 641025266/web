@@ -1,0 +1,1284 @@
+﻿同步、异步、阻塞、非阻塞
+1）阻塞和非阻塞是指当进程访问的数据如果尚未就绪，进程是否等待，简单来说他们的区别就相当于函数内部的实现区别，即未就绪时直接返回就是非阻塞 ，未就绪时等待就是阻塞。
+2）同步和异步是指访问数据的机制 ，同步一般指主动请求数据并等待IO完毕，当数据就绪后在读写的时必须阻塞。
+3）异步则是指主动请求数据后便可以继续处理其他任务，随后等待IO操作完毕的通知，进程在读写数据读写时也不发生阻塞。
+4）传统上基于进程或线程模型架构的web服务通过每进程或每线程处理并发连接请求，这势必会在网络和I/O操作时产生阻塞，其另一个必然结果则是对内存或CPU的利用率低下。
+   生成一个新的进程/线程需要事先备好其运行时环境，这包括为其分配堆内存和栈内存，以及为其创建新的执行上下文等。
+   这些操作都需要占用CPU，而且过多的进程/线程还会带来线程抖动或频繁的上下文切换，系统性能也会由此进一步下降。
+
+nginx介绍
+在设计的最初阶段，nginx的主要着眼点就是其高性能以及对物理计算资源的高密度利用，因此其采用了不同的架构模型。受启发于多种操作系统设计中基于“事件”的高级处理机制，
+nginx采用了模块化、事件驱动、单线程，异步非阻塞的架构，并大量采用了多路I/O复用及事件通知机制。
+在nginx中，连接请求由为数不多的几个仅包含一个线程的进程worker以高效的回环(run-loop)机制进行处理，而每个worker可以并行处理数千个的并发连接及请求。
+如果负载以CPU密集型应用为主，如SSL或压缩应用，则worker数应与CPU数相同；如果负载以IO密集型为主，如响应大量内容给客户端，则worker数应该为CPU个数的1.5或2倍。
+Nginx会按需同时运行多个进程：一个主进程(master)和几个工作进程(worker)，配置了缓存时还会有缓存加载器进程(cache loader)和缓存管理器进程(cache manager)等。
+所有进程均是仅含有一个线程，并主要通过“共享内存”的机制实现进程间通信。主进程以root用户身份运行，而worker、cache loader和cache manager均应以非特权用户身份运行。
+Nginx采用多进程模型，单Master—多Worker，由Master处理外部信号、配置文件的读取及Worker的初始化。
+Worker进程采用单线程、非堵塞的事件模型(Event Loop，事件循环)来实现port的监听及client请求的处理和响应，同一时候Worker还要处理来自Master的信号。
+因为Worker使用单线程处理各种事件。所以一定要保证主循环是非堵塞的，否则会大大减少Worker的响应能力
+
+主进程主要完成如下工作：
+1. 读取并验正配置信息；
+2. 创建、绑定及关闭套接字；
+3. 启动、终止及维护worker进程的个数；
+4. 无须中止服务而重新配置工作特性；
+5. 控制非中断式程序升级，启用新的二进制程序并在需要时回滚至老版本；
+6. 重新打开日志文件，实现日志滚动；
+7. 编译嵌入式perl脚本；
+
+worker进程主要完成的任务包括：
+1. 接收、传入并处理来自客户端的连接；
+2. 提供反向代理及过滤功能；
+3. nginx任何能完成的其它任务；
+
+cache loader进程主要完成的任务包括：
+1. 检查缓存存储中的缓存对象；
+2. 使用缓存元数据建立内存数据库；
+
+cache manager进程的主要任务：
+1. 缓存的失效及过期检验；
+
+Nginx的配置有着几个不同的上下文：events、http、server、upstream和location(还有实现邮件服务反向代理的mail)。
+Nginx的代码是由一个核心和一系列的模块组成, 核心主要用于提供Web Server的基本功能，以及Web和Mail反向代理的功能；
+还用于启用网络协议，创建必要的运行时环境以及确保不同的模块之间平滑地进行交互。不过，大多跟协议相关的功能和某应用特有的功能都是由nginx的模块实现的。
+这些功能模块大致可以分为事件模块、阶段性处理器、输出过滤器、变量处理器、协议、upstream和负载均衡几个类别，这些共同组成了nginx的http功能。
+事件模块主要用于提供OS独立的(不同操作系统的事件机制有所不同)事件通知机制如kqueue或epoll等。
+协议模块则负责实现nginx通过http、tls/ssl、smtp、pop3以及imap与对应的客户端建立会话。
+
+在nginx内部，进程间的通信是通过模块的pipeline或chain实现的；换句话说，每一个功能或操作都由一个模块来实现。
+例如，压缩、通过FastCGI或uwsgi协议与upstream服务器通信，以及与memcached建立会话等。
+
+
+案例：
+2. Nginx有哪些优化参数
+A. worker_processes 8;   
+   nginx 进程数，建议按照cpu 数目来指定，一般等于cpu的核心数，比如2个四核的cpu计为8
+B. worker_cpu_affinity 00000001 00000010 00000100 00001000 00010000 00100000 01000000 10000000;   
+   为每个进程分配cpu，上例中将8个进程分配到8个cpu，当然可以写多个，或者将一个进程分配到多个cpu
+C. worker_rlimit_nofile 65535; 即2的16次方
+   这个指令是指当一个nginx进程打开的最多文件描述符数量，理论值应该是最多打开文件数与进程数相除，现在在linux2.6内核下开启文件打开数为65535，
+   worker_rlimit_nofile就相应应该填写65535。这是因为nginx调度时分配请求到进程并不是那么的均衡，所以假如填写10240，总并发量达到3-4万时就有进程可能超过10240了，
+   这时会返回502错误
+D. useepoll;
+   使用epoll的I/O模型
+E. Worker_connections 65535;  
+   每个进程允许的最多连接数， 理论上每台nginx服务器的最大连接数为worker_processes*worker_connections。
+F. keepalive_timeout 60;   
+   keepalive超时时间
+G. client_header_buffer_size 4k;
+   客户端请求首部的缓冲区大小，这个可以根据你的系统内存分页大小来设置，一般一个请求头的大小不会超过1k，不过由于一般系统分页都要大于1k，所以这里设置为分页大小。
+H. open_file_cachemax=65535 inactive=60s;
+   这个将为打开的文件提供一个缓存，默认是没有启用的，max指定缓存数量，建议和打开文件数一致，inactive是指经过多长时间文件没被请求后删除缓存。
+I.  Open_file_cache_valid  80s;
+    这个是指多长时间检查一次缓存的有效信息。
+J.  open_file_cache_min_uses  1;   
+    open_file_cache指令中的inactive参数时间内文件的最少使用次数，如果超过这个数字，文件描述符一直是在缓存中打开的，
+    如上例，如果有一个文件在inactive时间内一次没被使用，它将被移除
+案例：
+使用nginx做负载均衡时，后端一主一备，测试发现主正常的情况下，会有10%左右的流量访问备，请分析原因。
+答：可能是nginx配置文件中的upstream模块中的max_fails太小，该值表示失败超过指定次数会暂停或把请求调度到其它服务器
+案例：
+nginx默认是不允许列出整个目录的。如何开启Nginx的目录文件列表功能？
+location /upload {  
+    autoindex on;   
+    autoindex_exact_size on;   显示出文件的确切大小，单位是bytes
+    autoindex_localtime on;    显示的文件时间为文件的服务器时间
+    root pathfile  
+}  
+
+
+listen address[:port][ssl][blacklog=number][rcvbuf=size][sndbuf=size]     blacklog表示后援消息队列，rcvbuf和sndbuf分别表示接受缓冲区，发送缓冲区
+nginx
+	web服务器：http协议
+	http协议: html, 文本, MIME
+		  major/minor: text/plain, text/html, image/jpeg
+		  web资源：URL (scheme://server:port/path/to/source即<协议>://<主机>:<端口号>/<路径
+		  http事务：request <----> response
+			request:
+				<method> <URL> <version>
+				<HEADERS>
+				<body>
+			response:
+				<version> <status> <reason phrase>
+				<HEADERS>
+				<body>				
+			status: 
+				1xx: 信息类
+				2xx: 成功类，200
+				3xx: 重定向，301（永久移动）, 302(临时移动）, 303（se other），304（内容没有改变）
+				4xx: 客户端类错误， 401（要求验证），403(禁止），404（没有找到）
+				5xx: 服务端类错误，
+                                     500(服务器内部错误）
+                                     502 Bad Gateway，作为网关或者代理工作的服务器尝试执行请求时，从上游服务器接收到无效的响应。
+                                     503 Service Unavailable由于临时的服务器维护或者过载，服务器当前无法处理请求。这个状况是临时的，并且将在一段时间以后恢复。
+                                     504 Gateway Timeout 
+
+		页面：多个资源
+			请求资源：
+				HREF:80, 40
+		认证：
+			基于IP
+			基于用户
+				basic
+				digest
+		httpd: MPM
+			prefork, worker, event
+		I/O类型：
+			同步和异步：synchronous, asyncrhonous
+				关注的是消息通知机制
+				同步：调用发出不会立即返回，但一旦返回就可以返回最终结果；
+				异步：调用发出之后，被调用方立即返回消息，但返回的非最终结果；被调用者通过状态、通知机制来通知调者，或通过回调函数来处理结果；
+			阻塞和非阻塞：block, nonblock
+				关注的是调用者等待调用结果(消息、返回值)时的状态
+				阻塞：调用结果返回之前，调用者（调用线程）会被挂起；调用者只有在得到结果之后才会返回；
+				非阻塞：调用结果返回之前，调用不会阻塞当前线程；
+		5种I/O模型：常用的是前面4种
+			blocking IO      阻塞IO
+			nonblocking IO   非阻塞IO
+			IO multiplexing  多路IO复用，本质还是同步IO
+			asyncrhonous IO  异步IO
+                        signal driven IO
+		一个read操作：
+			(1) 等待数据准备好；
+			(2) 从内核向进程复制数据；select(),     poll()
+			水平触发，边缘触发 
+
+	Nginx：
+		http://nginx.org/， C10k; 
+		Igor Sysoev, Rambler Media; 
+			engine X: nginx
+			tengine, OpenResty
+		Nginx的特性：
+			模块化设计、较好扩展性；
+			高可靠性
+                        master/worker
+			支持热部署
+				不停机更新配置文件、更换日志、更新服务器程序版本；
+			低内存消耗
+				10000个keep-alive连接模式下的非活动连接仅消耗2.5M内存；
+			event-driven, aio, mmap；
+			
+		基本功能：
+			静态资源的web服务器；
+			http协议的反向代理服务器；
+			pop3, smpt, imap4等邮件协议的反向代理；
+			能缓存打开的文件（元数据）、支持FastCGI（php-fpm）, uWSGI（Python Web Framwork）等协议
+			模块化（非DSO机制），过滤器zip，SSI，SSL；
+		web服务相关的功能：
+			虚拟主机（server）、keepalive、访问日志（支持基于日志缓冲提高其性能）、url rewirte、路径别名、基于IP及用户的访问控制、支持速率限制及并发数限
+			……
+			
+		Nginx的基本架构：
+			master/worker
+				一个master进程，可生成一个或多个worker进程；
+				事件驱动：epoll(Linux), kqueue（FreeBSD）, /dev/poll(Solaris)
+			        消息通知：select, poll, rt signals
+				支持sendfile,  sendfile64
+				支持AIO（异步IO），mmap
+				master: 加载配置文件、管理worker进程、平滑升级，...
+				worker：http服务，http代理，fastcgi代理，...
+				
+		模块类型：
+			核心模块：core module
+			Standard HTTP modules
+			Optional HTTP modules
+			Mail modules
+			3rd party modules
+
+                 常用模块：合计12个模块
+                        ngx_http_access_module   主要指令是access和deny
+                        ngx_http_auth_basic_module
+                        ngx_http_log_module 主要就是可以自定义日志，修改的日志针对是本机 
+                        ngx_http_stub_status_module
+                        ngx_http_referer_module  主要是根据referer首部进行判断
+                        ngx_http_ssl_module
+                        ngx_http_rewrite_module
+                        ngx_http_gzip_module
+                        ngx_http_fastcgi_module   主要是结合php
+                        ngx_http_proxy_module   可以修改日志，但是修改的日志要在后端主机才能生效;可以修改或增加发往后端主机的请求报文首部
+                        ngx_http_headers_module  可以修改或增加本机的响应报文首部
+                        ngx_http_upstream_module
+			
+	nginx编译安装配置：
+		# ./configure --prefix=/usr/local/nginx --conf-path=/etc/nginx/nginx.conf --user=nginx --group=nginx  --error-log-path=/var/log/nginx/error.log 
+                   --http-log-path=/var/log/nginx/access.log --pid-path=/var/run/nginx/nginx.pid --lock-path=/var/lock/nginx.lock  --with-http_ssl_module 
+                   --with-http_stub_status_module --with-http_gzip_static_module --with-debug   --with-pcre
+		# make && make install
+        补充说明：
+               gzip模块需要zlib库
+               rewrite模块需要yum install -y pcre-devel 
+               ssl 功能需要yum install -y mod_ssl 
+
+		配置文件的组成部分：
+			主配置文件：nginx.conf
+				    include conf.d/*.conf
+			fastcgi的配置文件：fastcgi_params，uwsgi_params			   
+		配置指令(必须以分号结尾)：
+			Directive  value1 [value2...];
+			支持使用变量：
+				内置变量：由模块引入；
+				自定义变量：set  $variable  value;   注意在设置变量值的时候也要加$
+				引用变量：$variable 
+变量简单案例：
+]# vi nginx.conf
+server {
+        listen       80 default_server;
+        listen       [::]:80 default_server;
+        set  $a  /data/;
+        location /test/ {
+           alias  $a;
+        }
+]# nginx -t 测试语法是否正常，一般只要语法正常就没有问题
+
+		配置文件分为main，event，http这3大部分
+			main block
+			event {
+				...
+			}
+			http {
+				...
+			}
+			http配置段：
+				http {
+					...
+					server {
+						...
+						server_name 
+						root 
+						alias
+						location /uri/ {
+							
+						}
+						...
+					}
+					server {
+						...
+					}
+				}
+			
+			main配置段：
+				类别：
+					正常运行必备的配置；
+					优化性能相关的配置；
+					用于调试、定位问题的配置；		
+				正常运行必备的配置：
+					1、user USERNAME  [GROUPNAME];
+						指定用于运行worker进程的用户和组；
+						user  nginx  nginx;
+					2、pid  /PATH/TO/PID_FILE;
+						指定nginx进程的pid文件路径；
+						pid  /var/run/nginx.pid;
+					3、worker_rlimit_nofile #;
+						指定一个worker进程所能够打开的最大文件描述符数量；
+					4、worker_rlimit_sigpending #;
+						指定每个用户能够发往worker进程的信号数量；
+						
+				性能优化相关的配置：
+					1、worker_processes #;
+						worker进程的个数；通常应该为物理CPU核心数量减1；
+						可以为"auto"，实现自动设定；
+					2、worker_cpu_affinity  CPUMASK CPUMASK ...;
+						CPUMASK:
+							0001
+							0010
+							0100
+							1000 
+						worker_cpu_affinity 00000001 00000010 00000100;
+					3、worker_priority  nice;
+						[-20, 19]
+						
+				调试、定位问题的配置：
+					1、daemon  off|on;
+						是否以守护进程方式启动nignx；
+					2、master_process  on|off;
+						是否以master/worker模型运行nginx；
+					3、error_log  /PATH/TO/ERROR_LOG level;
+						错误日志文件及其级别；出于调试的需要，可以设定为debug；但debug仅在编译时使用了“--with-debug”选项时才有效；
+						
+回顾：IO模型、Nginx
+	IO模型：
+		阻塞
+		非阻塞
+		IO复用（select, poll）
+		信号驱动的IO（epoll, kqueue, /dev/poll）
+		AIO 
+		nginx特性：epoll（linux的线程管理器）, aio(表示异步IO), mmap，master/worker
+
+Nginx(2)
+	nginx.conf的配置：
+		event配置段
+			1、worker_connections #;
+				每个worker进程所能够响应的最大并发请求数量；
+				worker_proceses * worker_connections	
+			2、use  [epoll|rgsig|select|poll];
+				定义使用的事件模型；建议让nginx自动选择；
+			3、accept_mutex [on|off];
+				各worker接收用户的请求的负载均衡锁；启用时，表示用于让多个worker轮流地、序列化地响应新请求；
+			4、lock_file  /PATH/TO/LOCK_FILE; 
+		http配置段
+			套接字或主机相关的指令
+				1、server {}
+					定义一个虚拟主机；
+					server {
+						listen PORT;
+						server_name NAME;
+						root /PATH/TO/DOCUMENTROOT;
+					}
+					...
+					注意：
+						(1) 基于port；listen指令监听在不同的端口；
+						(2) 基于hostname，server_name指令指向不同的主机名；
+
+				2、listen
+					listen address[:port] [default_server] [ssl] [http2 | spdy] 
+					listen port [default_server] [ssl] [http2 | spdy]
+						default_server：设置默认虚拟主机；用于基于IP地址，或使用了任意不能对应于任何一个server的name时所返回站点；
+						ssl：用于限制只能通过ssl连接提供服务；
+						spdy：SPDY protocol（speedy），在编译了spdy模块的情况下，用于支持SPDY协议；
+						http2：http version 2；
+				3、server_name NAME [...];
+					后可跟一个或多个主机名；名称还可以使用通配符和正则表达式(~)；	
+						(1) 首先做精确匹配；例如：www.magedu.com
+						(2) 左侧通配符；例如：*.magedu.com
+						(3) 右侧通配符，例如：www.magedu.*
+						(4) 正则表达式，例如：~ ^.*\.magedu\.com$
+						(5) default_server 
+虚拟主机案例：
+        vim /etc/hosts  本机配置hosts
+            192.168.139.184 test1.chenhao.com
+        yum install -y nginx 
+        查看/etc/nginx/nginx.conf，确保其中有include /etc/nginx/conf.d/*.conf;这一句代码,该文件不需要做任何修改
+        vim /etc/nginx/conf.d/virtual.conf 
+            server {
+                  listen       80;
+                  server_name  test1.chenhao.com;
+                  root         /usr/share/nginx/html;
+                  location / {
+                      root /data/nginx/html;
+                      index index.html;
+                  }
+
+             }
+        echo  'this is /usr/share/nginx/html' > /usr/share/nginx/html/index.html
+        mkdir -p /data/nginx/html
+        echo '/data/nginx/html' > /data/nginx/html/index.html 
+        nginx -t 
+        nginx 
+        在浏览器中输入test1.chenhao.com访问到的是/data/nginx/html/index.html内容，不是/usr/share/nginx/html/index.html
+说明：
+   1)在有两个root情况下，如果在浏览器中输入test1.chenhao.com，访问到的是location里面root的内容
+   只有在把location / 这个配置注释掉后，访问的才是root    /usr/share/nginx/html内容
+   2)同理如下配置,在浏览器中输入入test1.chenhao.com访问到的是后端http://192.168.139.132内容
+   vim /etc/nginx/conf.d/virtual.conf 
+       server {
+                  listen       80;
+                  server_name  test1.chenhao.com;
+                  root         /usr/share/nginx/html;
+                  location / {
+                      proxy_pass http://192.168.139.132;
+                  }
+
+       }
+   事实上只要有了location /这个配置，真正的根就变成了location /这个配置，root /usr/shar/nginx/html这句配置彻底失效，
+   比如在浏览器中输入test1.chenhao.com/web这样一个没有location的url，实际它访问的是http://192.168.139.132/web，不是/usr/share/nginx/html/web
+				4、tcp_nodelay on|off;
+					对keepalive模式下的连接是否使用TCP_NODELAY选项；
+				5、tcp_nopush on|off;
+					是否启用TCP_NOPUSH(FREEBSE）或TCP_CORK(Linux)选项；仅在sendfile为on时有用；
+				6、sendfile on|off;
+					是否启用sendfile功能；sendfile就是内核直接打包发送报文
+			路径相关的指令：
+				7、root  设置web资源的路径映射；用于指明请求的URL所对应的linux主机文件系统目录路径；
+                                         要注意root可同时用在server和location上下文中
+						server {
+							...
+							root  /data/www/vhost1;
+						}
+						http://www.magedu.com/images/logo.jpg --> /data/www/vhosts/images/logo.jpg
+						server {
+							...
+							server_name  www.magedu.com;
+							location /images/ {
+								root  /data/imgs/;
+								...
+							}
+						}
+						http://www.magedu.com/images/logo.jpg --> /data/imgs/images/logo.jpg
+						
+				8、	location [ = | ~ | ~* | ^~ ] uri 
+                                                 { ... }
+				        location  @name   用于定义一个Location块，且该块不能被外部Client所访问，只能被Nginx内部配置指令所访问，比如try_files or error_page
+                                                 { ... }
+				        功能：允许根据用户请求的URI来匹配定义的各location，匹配到时，此请求将被相应的location块中的配置所处理；
+                                              简言之，即用于为需要用到专用配置的uri提供特定配置；
+						server {
+							...
+							server_name www.magedu.com;
+							root /data/www;
+							location  /admin/  {
+								...
+							}
+						}	
+						=：URI的精确匹配；
+						~：做正则表达式匹配，区分字符大小写；
+					       ~*：做正则表达式匹配，不区分字符大小写；
+					       ^~：URI的左半部分匹配，不区分字符大小写；^~是上尖括号+~	
+					      匹配优先级：精确匹配=,^~,~或~*,不带符号的URI ---非常重要
+匹配优先级的案例：
+vi /etc/nginx/conf.d/default.conf
+ server {
+    listen       80;
+    server_name  172.17.0.2;
+    location / {   这就是不带符号的URI
+       root /blog;
+    }
+    location ~* / {  带符号的优先级比没有带符号的高
+       root /blog1;
+    }
+}
+mkdir /blog /blog1
+echo '/blog/index.html'> /blog/index.html
+echo '/blog1/index.html'> /blog1/index.html	
+nginx -t
+nginx
+curl http://172.17.0.2 此时访问的内容是/blog1/index.html		
+				9、alias
+					只能用于location配置段，定义路径别名；					
+					location  /images/ {
+						root /data/imgs/;
+					}
+					location  /images/  {
+						alias /data/imgs/;
+					}
+					注意：--重要
+						root指令：给定的路径对应于location的最左边“/”；
+							/images/test.jpg -->  /data/imgs/images/test.jpg  这个/data/imgs/images/test.jpg是文件系统路径 
+						alias指令：给定的路径对应于location的最右边“/”
+							/images/test.jpg -->  /data/imgs/test.jpg         这个/data/imgs/test.jpg是文件系统路径
+alias使用案例：
+mkdir /blog/hello 
+echo  '/blog/index.html' > /blog/index.html 
+echo  '/blog/hello/index.html' > /blog/hello/index.html
+vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+        location /test/ {
+             alias  /blog/;
+        }
+}
+nginx -t 
+systemctl restart nginx.service 
+curl http://web.chenhao.com/test/访问到的是/blog/index.html
+curl http://web.chenhao.com/test/hello/访问到的是/blog/hello/index.html
+注意：
+   1)http://web.chenhao.com/test/不能写成http://web.chenhao.com/test，因为location是/test/，/test不能匹配到
+   2)http://web.chenhao.com/test/hello/访问到的是/blog/hello/index.html,需要仔细理解
+    alias表示给定的路径对应于location /test/的最右边/,不是实际访问时/test/hello/的最右边/
+root案例参照上面案例即可
+				10、index 
+					index file ...;
+					默认主页面；
+				11、error_page code ... [=[response]] uri;
+					根据http的状态码重定向错误页面；
+						error_page  404  /404.html
+						error_page  404  =200  /404.html  （以指定的响应状态码进行响应）
+				12、try_files file ... uri;
+				        try_files file ... =code;
+				        尝试查找第1至第N-1个文件，第一个即为返回给请求者的资源；若1至N-1文件都不存在，则跳转至最一个uri
+                                       （必须不能匹配当前location即try_files 里面的uri，而应该匹配至其它location，否则会导致死循环）
+			客户端请求相关的配置：
+				13、keepalive_timeout timeout [header_timeout];
+					设定keepalive连接的超时时长；0表示禁止长连接；默认为75s；	
+				14、keepalive_requests number;
+					在keepalived连接上所允许请求的最大资源数量；默认为100；
+				15、keepalive_disable none | browser ...;
+					指明禁止为何种浏览器使用keepalive功能；
+				16、send_timeout #;
+					发送响应报文的超时时长，默认为60s; 
+				17、client_body_buffer_size size;
+					接收客户请求报文body的缓冲区大小；默认为16k；超出此指定大小时，其将被移存于磁盘上；
+				18、client_body_temp_path path [level1 [level2 [level3]]];
+					设定用于存储客户端请求body的临时存储路径及子目录结构和数量；
+					client_body_temp_path  /var/tmp/client_body  2 2;
+			对客户端请求的进行限制
+				19、limit_excpet  METHOD {...}对指定范围之外的其它的方法进行访问控制；
+					limit_except  GET {
+						allow  172.16.0.0/16;
+						deny all;
+					}
+				20、limit_rate  speed;
+					限制客户端每秒钟所能够传输的字节数，默认为0表示无限制；
+					
+			文件操作优化相关的配置
+				21、aio  on|off;
+				22、directio  size|off;
+				    Enables the use of the O_DIRECT flag (FreeBSD, Linux), the F_NOCACHE flag (Mac OS X), or the directio() function (Solaris),                                                             when reading files that are larger than or equal to the specified size.
+				23、open_file_cache off;
+					open_file_cache max=N [inactive=time];
+						nginx可以缓存以下三种信息：
+							(1) 文件描述符、文件大小和最近一次的修改时间；
+							(2) 打开的目录的结构；
+							(3) 没有找到的或者没有权限操作的文件的相关信息；
+						max=N表示可缓存的最大条目上限；一旦达到上限，则会使用LRU算法从缓存中删除最近最少使用的缓存项；
+						inactive=time：在此处指定的时长内没有被访问过的缓存项是为非活动缓存项，因此直接删除；
+				24、open_file_cache_errors on | off;
+					是否缓存找不到其路径的文件，或没有权限没有权限访问的文件相关信息；
+				25、open_file_cache_valid time;
+					每隔多久检查一次缓存中缓存项的有效性；默认为60s; 
+				26、open_file_cache_min_uses number;
+					缓存项在非活动期限内最少应该被访问的次数；
+			ngx_http_access_module模块的配置（基于IP的访问控制）
+				27、allow address | CIDR | unix: | all;
+				28、deny  address | CIDR | unix: | all;
+				应用上下文：http, server, location, limit_except
+ngx_http_access_module模块使用案例：
+vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+        location / {
+          allow 192.168.139.184;
+          deny all;
+       }
+}
+nginx -t 
+systemctl restart nginx.service 
+现在只有192.168.139.184地址允许被访问，其他地址访问都会出现被禁止信息
+			ngx_http_auth_basic_module模块的配置（basic认证）
+				29、auth_basic string | off; 使用http basic认证协议对用户进行认证；
+				30、auth_basic_user_file file;实现用户认证的账号文件；
+						文件格式：
+							name1:password1
+							name2:password2:comment
+						密码格式：
+							(1) encrypted with the crypt() function; 
+							(2) md5加密; 
+							
+							location /admin/ {
+							         auth_basic "Admin Area";
+							         auth_basic_user_file /etc/nginx/.ngxhtpasswd;
+							}
+ngx_http_auth_basic_module模块使用案例：
+yum install -y httpd-tools 
+htpasswd  -c /etc/nginx/conf.d/.nginxpasswd root  nginx支持htpasswd的加密格式
+vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+       location / {
+          allow all;
+          auth_basic "please input your passwd";
+          auth_basic_user_file  /etc/nginx/conf.d/.nginxpasswd;
+       }
+}
+nginx -t 
+systemctl restart nginx.service 
+在浏览器中输入http://192.168.139.184，此时需要输入用户和密码
+			ngx_http_log_module模块的配置，该模块的核心作用就是可以自定义日志格式
+                                Context:http, server, location, if in location, limit_except
+				31、log_format  name  string  ...;定义日志格式及其名称；日志格式一般通过调用内置变量来定义；
+				32、access_log path [format [buffer=size [flush=time]]];访问日志文件路径，格式名称以及缓存大小和刷写时间间隔；建议定义缓冲以提升性能；
+				    access_log off;
+				33、open_log_file_cache max=N [inactive=time] [min_uses=N] [valid=time];
+				    open_log_file_cache off;
+ngx_http_log_module模块使用案例：
+vim /etc/nginx/nginx.conf
+    http {
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log  /var/log/nginx/access.log  main;
+    ....
+    }
+如上是nginx的原始log配置信息，如果需要修改，使用如下两行代码替换即可           
+log_format compression '$remote_addr - $remote_user [$time_local] ' '"$request" $status $bytes_sent ' '"$http_referer" "$http_user_agent" "$gzip_ratio"';
+access_log /spool/logs/nginx-access.log compression buffer=32k;
+补充说明：如果要查看nginx的http报文响应时间，可以在日志格式最后加上$request_time，然后分析日志，也就是如下格式
+'$remote_addr - $remote_user [$time_local] ' '"$request" $status $bytes_sent ' '"$http_referer" "$http_user_agent" "$gzip_ratio" "$request_time" '
+			ngx_http_stub_status_module模块配置：
+				34、stub_status;
+					通过指定的uri输出stub status；
+					Active connections: 291
+					server accepts handled requests
+					16630948 16630948 31070465 
+					Reading: 6 Writing: 179 Waiting: 106 				
+					
+					Active connections：当前活动的客户端连接数；
+					accepts：已经接受的客户端连接总数量；
+					handled：已经处理过后客户端连接总数量；
+					requests：客户端的总的请求数量；
+					Readking：正在读取的客户端请求的数量；
+					Writing：正向其发送响应报文的连接数量；
+					Waiting：等待其发出请求的空闲连接数量；	
+ngx_http_stub_status_module模块使用案例:
+vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+        location /basic_status {   此路径可以自定义
+                 stub_status on;
+        }
+}
+nginx -t 
+systemctl restart nginx.service 
+在浏览器中访问http://web.chenhao.com/basic_status
+实践作业：
+    (1) 对http虚拟主机的请求统统定向至https；务必实现
+   （2）仅把对/admin/的请求定向至https;      务必实现
+    (3) 对常见支持较好压缩比的资源执行压缩响应；
+			ngx_http_referer_module模块配置（基于请求报文中的Referer首部的值做访问控制）
+				35、valid_referers  none | blocked | server_names | string ...;
+					none：请求报文不存在referer首部；
+					blocked：请求报文中存在referer首部，但其没有有效值，或其值非以http://或https://开头；
+					server_names：其值为一个主机名；
+					arbitrary string：直接字符串，可以使用*通配符；
+					regular expression：以~起始的正则表达式；
+					内置变量：$invalid_referer（所有不能符合valid_referer指定定义的引用请求均为不合法引用）		
+				示例
+					valid_referers   none   blocked   server_names   *.example.com   example.*  www.example.org/galleries/   ~\.google\.;	
+					if ($invalid_referer) {
+						return  403;
+					}
+					
+27-1						
+Nginx(3) 
+	ngx_http_ssl_module模块配置
+        Context:http, server
+		ssl_certificate file; 
+			证书文件路径；
+		ssl_certificate_key file;
+			证书对应的私钥文件；
+		ssl_ciphers ciphers;
+			指明由nginx使用的加密算法，可以是OpenSSL库中所支持各加密套件；
+		ssl_protocols [SSLv2] [SSLv3] [TLSv1] [TLSv1.1] [TLSv1.2];
+			指明支持的ssl协议版本，默认为后三个；
+		ssl_session_cache off|none|[builtin[:size]]|[shared:name:size];
+			指明ssl会话缓存机制；
+				builtin：使用OpenSSL内置的ssl会话缓存，对机制为各worker私有；
+				shared： 在各worker之间使用一个共享的缓存；
+					name：独有名称；
+					size：缓存空间大小；
+		ssl_session_timeout time;ssl会话超时时长；即ssl session cache中的缓存有效时长；
+
+ngx_http_ssl_module模块使用案例：
+       (umask 077;openssl genrsa -out /tmp/nginx.key 1024)
+       ll /tmp/nginx.key 验证文件是否生成
+       openssl req  -new -x509  -days 365 -key /tmp/nginx.key -out /tmp/nginx.crt  这一步有好几个操作，具体参考http的文档
+       ll /tmp/nginx.crt 验证文件是否生成,以上每一步都不能出错误
+       vim /etc/nginx/conf.d/ssl.conf 
+           server {
+             listen       443 ssl;
+             server_name  test1.chenhao.com;
+             ssl_certificate /tmp/nginx.crt;
+             ssl_certificate_key /tmp/nginx.key;
+             ssl_session_cache shared:SSL:1m;
+             ssl_session_timeout  10m;
+             ssl_ciphers HIGH:!aNULL:!MD5;
+             ssl_prefer_server_ciphers on;
+             location / {
+                    root /usr/share/nginx/html;
+                    index index.html;
+             }
+           }
+
+   2)nginx -t 验证配置文件是否有问题
+   3)nginx 
+   4)ss -tunl(查看443端口是否打开）
+   5)在浏览器中输入https://test1.chenhao.com 验证是否可以访问
+ngx_http_rewrite_module模块配置
+                Context:server, location, if
+		将请求的url基于正则表达式进行重写；http --> https,  domain1.tld --> domain2.tld, uri1 --> uri2, ...	
+		语句格式为：rewrite  regex  replacement [flag];
+                                 如果在一个location中有多个rewrite规则，则从上而下依次进行匹配（可能会出现循环），所以可以使用flag来控制这种循环
+				 regex：正则表达式，用于匹配用户请求的url；
+				 replacement：重写后的结果,不能使用正则表达式，但是可以使用后向引用
+                                              如果replacement是以http://或者https://开头，则替换后结果直接以重定向方式返回到客户端，
+                                              也就是假如规则是http://localhost/test/index.html---http://localhost/index.html
+                                              客户在浏览器中输入http://localhost/test/index.html后可以查看到http://localhost/index.html内容，
+                                              但是浏览器中的地址会从http://localhost/test/index.html变为http://localhost/index.html
+
+				 [flag]：flag可有可无，但是根据实际情况最好加
+					last：相当于函数中的continue，提前结束本轮循环，进入下一轮循环，即重写完成之后停止对当前uri的本轮后续处理，改为对新url的新一轮匹配；
+					break：就是函数中的break，跳出循环，即重写完成之后跳出后续匹配动作，直接到新url的地址获取对应内容；
+                                     last和break都是在nginx内部发生的，下面的redirect和permanent都是在客户端发生的
+					redirect：重写完成之后会返回客户端一个临时的重定向，由客户端浏览器对新的url重新发起请求，响应状态码是302，用户自身不参与；
+					permanent：重写完成之后会返回客户端一个永久的重定向，由客户端浏览器对新的url重新发起请求，响应状态码是301，用户自身不参与；
+                                 写法一：
+                                 server {
+                                     location location1 {
+                                          }
+                                     location location1 {
+                                          }
+                                     location /test/ {
+                                           rewrite  /test/(.*)  /$1  last；  此时匹配到该条规则后，又到该server的location1依次往下匹配 
+                                           rewrite ...............
+                                          }
+                                 }
+
+                                 写法二：
+                                 server {
+                                     location location1 {
+                                          }
+                                     location location1 {
+                                          }
+                                     location /test/ {
+                                           rewrite  /test/(.*)  /$1  break；  此时匹配到该条规则后，不再继续匹配，直接到对应的$1地址获取内容 
+                                           rewrite ...............
+                                          }
+                                 }
+                                 总结:对于last和break，浏览器中输入的地址是什么就是什么不会改变，但是redirect和permanent就会跳转成匹配后的地址。
+                                      但是看到的内容都是一样的
+                                 
+                                  写法三：主要适用于服务所在后端主机不是本机或者服务是本机的其他端口
+                                      rewrite /test/(.*)  http://ip/$1；等同于如下两条配置,可根据具体情况调整
+                                      proxy_pass http://ip;
+                                      rewrite /test/(.*) $1 break; 
+				PCRE正则表达式元字符
+					字符匹配：., [ ], [^]
+					次数匹配：*, +, ?, {m}, {m,}, {m,n}
+					位置锚定：^, $
+					或者：|
+					分组：(), 后向引用, $1, $2, ...   （正常的后向引用是\1，\2，两者有差别，注意区分）
+			if (condition) { ... }
+				条件判断，引用新的配置上下文；
+				condition：
+					比较表达式：
+						==，!=
+						~：模式匹配，区分字符大小写；
+						~*：模式匹配，不区分字符大小写；
+						!~：模式不匹配，区分字符大小写；
+						!~*: 模式不匹配，不区分字符大小写；
+					文件及目录判断：
+						-f, !-f：是否存在且为普通文件；
+						-d, !-d: 是否存在且为目录；
+						-e, !-e：是否存在；
+						-x, !-x：是否存在且可执行；
+			return code [text];
+			return code URL;
+			return URL; 立即停止对请求的uri的处理，并返回指定的状态码；
+			set $variable value; 变量赋值；
+			rewrite_log on | off;  是否将重写日志记入error log中，默认为关闭；
+			调试方法：
+				错误日志debug；
+				开启rewrite_log；
+ngx_http_rewrite_module模块使用案例1：
+    mkdir -p  /data/nginx/html/test4/download/a/b/c/mp3/
+    echo ' this is from /data/nginx/html/test4/download/a/b/c/mp3/32.html' > /data/nginx/html/test4/download/a/b/c/mp3/index.html 
+    vim /etc/nginx/conf.d/virtual.conf 
+           server {
+              listen       80;
+              server_name  test4.chenhao.com;
+              root         /data/nginx/html/test4/;
+              rewrite ^(/download/.*)/media/(.*)\..*$  $1/mp3/$2.html   last;
+	   }
+     nginx -t 
+     nginx -s reload 	
+在浏览器中输入http://test4.chenhao.com/download/a/b/c/media/index.wmv-->http://test4.chenhao.com/download/a/b/c/mp3/index.html 查看是否可以访问到想要的内容
+ngx_http_rewrite_module模块使用案例2:
+vi /etc/nginx/conf.d/test3.conf
+server {
+    listen       80;
+    server_name  test3.chenhao.com;
+    rewrite ^/(.*)$   https://test3.chenhao.com/$1 permanent;
+}
+
+server {
+    listen       443 ssl;
+    server_name  test3.chenhao.com;
+    ssl_certificate  /tmp/nginx.crt;
+    ssl_certificate_key /tmp/nginx.key;
+    ssl_session_cache shared:SSL:1m;
+    ssl_session_timeout  10m;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    location /test3/ {
+             root  /usr/share/nginx/html/test3;
+             rewrite  ^/test3/(.*)$  /$1 break;
+    }
+}
+注意：案例1和案例2其实实现的效果很类似，在配置写法上主要就是root位置指明，仔细理解
+
+ngx_http_rewrite_module结合ngx_http_ssl_module案例，把http内容全部重定向到https
+vi /etc/nginx/conf.d/default.conf
+server {
+    listen       80;
+    server_name  test1.chenhao.com;
+    rewrite ^/(.*)  https://test1.chenhao.com/$1 permanent;
+}
+vim /etc/nginx/conf.d/ssl.conf 
+server {
+             listen       443 ssl;
+             server_name  test1.chenhao.com;
+             ssl_certificate /tmp/nginx.crt;
+             ssl_certificate_key /tmp/nginx.key;
+             ssl_session_cache shared:SSL:1m;
+             ssl_session_timeout  10m;
+             ssl_ciphers HIGH:!aNULL:!MD5;
+             ssl_prefer_server_ciphers on;
+             location / {
+                    root /usr/share/nginx/html;
+                    index index.html;
+             }
+}
+此时http内容全部重定向到https
+
+ngx_http_gzip_module模块配置 
+			gzip on | off;
+				启用或禁用gzip压缩响应报文；
+			gzip_comp_level level;
+				压缩比，1-9，默认为1; 
+			gzip_disable regex ...;
+				regex是为用于匹配客户端响应器类型的正则表达式；
+				表示对何种浏览器禁止使用压缩功能；
+			gzip_min_length length;
+				触发压缩功能的响应报文的最小长度；
+			gzip_http_version 1.0 | 1.1;
+				设定启用压缩功能时，协议的最小版本；
+			gzip_proxied off | expired | no-cache | no-store | private | no_last_modified | no_etag | auth | any ...;
+				定义对客户端请求的具有何种请求属性的资源启用压缩功能；如expired则表示对由于使用了expire首部而无法缓存的对象启用压缩功能；
+			gzip_types mime-type ...;
+				指明仅对哪些类型的资源执行压缩操作；即压缩过滤器；
+			
+			示例：
+				gzip  on;
+				gzip_http_version 1.0;
+				gzip_comp_level 6;
+				gzip_disable msie6;
+				gzip_min_length 2;
+				gzip_types text/plain text/css text/xml application/x-javascript application/xml application/json application/java-script;
+		                常见的MIME类型：
+                                .html text/html   本标记语言文本
+                                .xml text/xml     xml文档
+                                .txt text/plain   普通文本
+                                .css text/css
+                                .js application/x-javascript
+27-3				
+ngx_http_fastcgi_module模块配置（fastcgi协议代理）
+			LAMP：
+				httpd+php:
+					module (libphp5.so)
+					cgi 
+					fastcgi：后端提供cgi server process； 
+						Client: fastcgi client
+						Server：fastcig Server 				
+			LNMP：（nginx+php只有fastcgi一种方式，即安装php-fpm）
+				nginx: ngx_http_fastcgi_module
+				php-fpm(factcgi process manager,即fastcgi 进程管理器）：fastcgi
+				php-mysql: mysql-server, mariadb-server
+
+				server {
+					...
+					location ~* \.php$ {
+						...
+					}
+					
+			编译php工作为fpm机制时：
+				./configure ...  --enable-fpm ... 表示php以独立服务方式运行
+				php-fpm的工作方式：
+					listen = 127.0.0.1:9000
+					listen.allowed_clients = 127.0.0.1
+					pm = dynamic|static 
+						pm.start_servers：启动fpm进程时启动的工作进程数量；
+						pm.min_spare_servers：最少空闲进程数；
+						pm.max_spare_servers：最大空闲进程数；
+						pm.max_children：最大工作进程数；
+				user = USERNAME
+				group = GROUPNAME
+			fastcgi模块指令：
+				(1) fastcgi_pass address;
+					address为fastcgi server监听的地址；
+					示例：fastcgi_pass   127.0.0.1:9000;	
+				(2) fastcgi_index name;
+					定义fastcgi应用的默认主页；
+					示例：fastcgi_index  index.php;	
+				(3) fastcgi_param parameter value [if_not_empty];
+					fastcgi模块设定传递给后端fastcgi server(即php-fpm服务器）参数及其值； 
+					示例：fastcgi_param  SCRIPT_FILENAME  /scripts$fastcgi_script_name;
+                                              SCRIPT_FILENAME的含义可以查看/etc/nginx/fastcgi.conf文件中的内容 	
+					http://server/index.php --> 访问本地系统绝对路径的scripts/index.php，仔细理解
+                                (4) fastcgi_cache_path path  [levels=levels] [use_temp_path=on|off] keys_zone=name:size [inactive=time] [max_size=size];
+					定义缓存：缓存空间等；	
+					可应用的上下文 ：http 
+					缓存机制：
+						 元数据：内存，即为keys_zone；
+						 数据：磁盘，即为path; 
+					levels=#[:#[:#]]
+						levels=2:1
+					keys_zone=name:size
+						name: cache的标识符；
+						size：元数据cache大小；
+					max_size：缓存空间上限；
+				(5) fastcgi_cache zone | off;
+					调用定义过的缓存；
+					zone即为通过fastcgi_cache_path定义缓存时其keys_zone参数中的name；
+				(6) fastcgi_cache_key string;
+					定义如何使用缓存键；
+					使用示例：fastcgi_cache_key   $request_uri;
+				(7) fastcgi_cache_methods GET | HEAD | POST ...;
+					为何种请求方法对应的请求进行缓存，默认为GET和HEAD；
+				(8) fastcgi_cache_min_uses number; 缓存项的最少使用次数；
+				(9) fastcgi_cache_use_stale error | timeout | invalid_header | updating | http_500 | http_503 | http_403 | http_404 | off ...;
+					是否可使用stale缓存项响应用户请求；stale表示不新鲜，过期
+				(10) fastcgi_cache_valid [code ...] time;对不同响应码的响应设定其可缓存时长；
+					示例：
+						fastcgi_cache_valid 200 302 10m;
+						fastcgi_cache_valid 404      1m;					
+				注意：调用缓存时，至少应该指定三个参数
+					fastcgi_cache
+					fastcgi_cache_key
+					fastcgi_cache_valid 
+ngx_http_fastcgi_module模块使用案例：
+     yum install -y php-fpm
+     systemctl start php-fpm.service
+     vim /web/www/index.php
+<?php
+   phpinfo();
+?>
+     vim /etc/nginx/conf.d/virtual.conf 
+           server {
+              listen       80;
+              server_name  web.chenhao.com;
+              root         /web/www/;                             
+              location  ~  \.php$ {
+                      fastcgi_pass 127.0.0.1:9000;
+                      fastcgi_param SCRIPT_FILENAME  /web/www/$fastcgi_script_name;
+                      include /etc/nginx/fastcgi_params;
+               }
+          }
+    nginx -t 
+    systemctl start nginx.service
+    在浏览器输入http://web.chenhao.com/index.php，验证是否查看到php信息
+fastcgi_cache的使用案例：
+         mkdir -pv /var/cache/nginx/fastcgi/
+         chown -R nginx:nginx  /var/cache/nginx/fastcgi/
+         vim /etc/nginx/conf.d/virtual.conf 
+           fastcgi_cache_path /var/cache/nginx/fastcgi/ levels=2:2  keys_zone=fastcgicache:10m;
+           server {
+              listen       80;
+              server_name  web.chenhao.com;
+              root         /web/www/;                             
+              location  ~ \.php$ {
+                     fastcgi_pass  127.0.0.1:9000;
+                     fastcgi_param SCRIPT_FILENAME  /web/www/$fastcgi_script_name;
+                     include /etc/nginx/fastcgi_params;
+                     fastcgi_cache  fastcgicahe;
+                     fastcgi_cache_key  $request;
+                     fastcgi_cache_valid 200 302 10m;
+              }	
+            }
+         nginx -t 
+         systemctl restart nginx.service 
+         在浏览器中访问http://web.chenhao.com/index.php，然后在/var/cache/nginx/fastcgi/目录查看是否已经有缓存内容产生
+
+Nginx(4)
+29-2
+        ngx_http_proxy_module模块配置（http或https协议代理）
+		(1) proxy_pass URL;
+			应用上下文：location, if in location, limit_except
+			proxy_pass后面的路径不带uri时，其会将location的uri传递给后端的主机；下面的示例会将/uri/传递给backend服务器；
+				location  /uri/ {
+					proxy_pass http://hostname;
+				}
+			proxy_pass后面的路径是一个uri时，其会将location的uri替换为后端主机自己的uri；
+				location  /uri/ {
+					proxy_pass http://hostname/new_uri/;
+				}
+			如果location定义其uri时使用的正则表达式模式匹配，则proxy_pass后的路径不能够使用uri；
+				location  ~ *\.(jpg|gif|jpeg)$ 
+					proxy_pass  http://HOSTNAME;
+				}
+				特别说明：此处的http://HOSTNAME后面不能有任何uri，哪怕只有/也不可以；
+ngx_http_proxy_module模块使用说明
+backend_server做如下操作
+mkdir /var/www/html/login
+vim  /var/www/html/login/index.html
+     this is from /var/www/html/login/index.html
+service httpd start 
+proxy_server节点做如下操作
+vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+        location  /login/ {
+            proxy_pass  http://192.168.139.169; 建议此处不要带URI
+       }
+
+}
+nginx -t 
+systemctl restart nginx.service
+在浏览器中访问http://web.chenhao.com/login，查看是否可以访问到后端内容
+29-3	
+               (2) proxy_set_header field value;
+			用于proxy server向backend server发请求报文时，将某请求首部重新赋值，或在原有值后面添加一个新的值； 也可以添加自定义首部； 
+			示例：
+				proxy_set_header  X-Real-IP        $remote_addr; 
+				proxy_set_header  X-Forwarded-For  $proxy_add_x_forwarded_for;   
+                                理解：
+                                1)$remote_addr是http_core_module引入的变量,此时表示X-Real-IP首部的值是$remote_addr
+                                2)可以理解为把$proxy_add_x_forwarded_for变量值赋予给了首部X-Forwarded-For
+                                3)X-Forwarded-For: client1, proxy1, proxy2, proxy3  X-Forwarded-For的大概格式如左边所示，其值通过一个逗号+空格把多个IP地址区分开, 
+                                  最左边(client1)是最原始客户端的IP地址, 代理服务器每成功收到一个请求，就把请求来源IP地址添加到右边
+proxy_set_header具体使用案例：
+vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+        location  /login/ {
+                proxy_pass http://192.168.139.169;
+                proxy_set_header  X-Real-IP $remote_addr;
+                proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+         }
+} 
+backend_server做如下操作
+vim /etc/httpd/conf/httpd.conf
+    LogFormat "%{X-Real-IP}i  %l %u %t \"%r\" %>s %b \"%{real_ip}i\" \"%{User-Agent}i\"" combined    注意X-Real-IP是首部
+httpd -t 
+systemctl restart httpd.service 
+验证：另外找一个节点，比如192.168.139.171做为客户端，在其浏览器中输入web.chenhao.com/login/，然后在192.168.139.169查看日志信息，
+      远程主机地址此时修改为真正的客户端地址192.168.139.171，而不再是proxy_server地址
+补充说明：
+    1)因为proxy_server发给backend_server的http报文无法获取，所以通过修改backend_server的访问日志来验证首部地址是否已经改变
+    2)如果后端backend_server是nginx，在日志格式里面只能写$remote_addr和$proxy_add_x_forwarded_for，因为这两个是nginx里面的变量，
+      不能写$X-Real-IP和$X-Forwarded-For，因为这是首部名称，但是在http里面要写首部,仔细理解
+      log_format  main  '$remote_addr   $proxy_add_x_forwarded_for  - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+      此时后端backend_server nginx的日志大概入下所示
+172.16.2.34 172.16.2.151, 172.16.2.34  - - [03/Apr/2018:15:49:57 +0800] "GET / HTTP/1.0" 200 19 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_0) AppleWebKit/537.36 
+(KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36" "172.16.2.151"
+  3)在默认配置情况下，如果要取得客户端真实IP地址的话，只有取HTTP_X_FORWARDED_FOR的第一个逗号前的IP地址最靠谱，其他的地址都有可能被重写。
+    当然如果连HTTP_X_FORWARDED_FOR都被重写的话就另当别论了
+    $remote_addr始终指向的是nginx最近的请求端，如果nginx的最近请求端还是有代理，则$remote_addr就是前端代理的地址，而不是真实客户端地址
+                 缓存相关的选项(缓存要先定义，后调用)
+                 nginx缓存机制：
+                 内存存的是key-value，但是key是对应的uri，value是对应内容的MD5校验码，磁盘存放的文件名就是对应内容的MD5校验码
+                 假如/etc/fstab的MD5校验码是f576*******，按照2位16进制作物一个目录名，则f5是一级目录，76是二级目录
+                (3)用来定义缓存,(4),(5),(6)合在一起调用缓存
+		(3) proxy_cache_path path [levels=levels] [use_temp_path=on|off] keys_zone=name:size [inactive=time] [max_size=size] 定义缓存；可用上下文为http; 
+		(4) proxy_cache zone | off;默认是off调用缓存；可用上下文 为http, server和location；
+		(5) proxy_cache_key string;
+			定义缓存键；
+                        proxy_cache_key $request_uri;
+			proxy_cache_key $scheme$proxy_host$request_uri;（表示请求协议+代理主机+请求uri）	
+		(6) proxy_cache_valid [code ...] time;对不同响应码的响应设定其可缓存时长；
+			示例：
+				proxy_cache_valid 200 302 10m;
+				proxy_cache_valid 404      1m;	
+                 补充： proxy_cache_use_stale error | timeout | invalid_header | updating | http_500 | http_502 | http_503 | http_504 | http_403 | http_404 | off ...;
+		        表示代理服务器在什么情况下可以使用过期缓存               
+                 详细配置如下（务必关掉防火墙和selinux）
+                 http {
+                        proxy_cache_path /var/cache/nginx/proxy/ levels=2:2  keys_zone=proxycache:10m;
+                        server {
+                                   listen       80;
+                                   server_name  192.168.139.181;
+                                   root         /usr/share/nginx/html;
+                                   include /etc/nginx/default.d/*.conf;
+                                   location /bbs/ {
+                                                   proxy_pass http://192.168.139.180;
+                                                   proxy_cache  proxycache;
+                                                   proxy_cache_key  $uri; 这是nginx中引入的变量
+                                                   proxy_cache_valid 200 302 10m;
+                                                   }
+                                 }
+                      }
+		跟连接相关的选项
+		(7) proxy_connect_timeout time;定义与后端服务器建立连接的超时时长；默认为60s，不建议超出75s; 
+		(8) proxy_send_timeout time;把请求发送给后端服务器的超时时长；默认为60s;
+		(9) proxy_read_timeout time;等待后端服务器发送响应报文的超时时长；					
+
+实践作业:
+(1) 假如nginx有两个server（虚拟主机），且均反代至后端某一个主机，后端主机也有两个虚拟主机，虚拟主机名与nginx的相同；
+(2) 要求用户请求nginx的哪一个虚拟主机，就将其代理后后端主机的对应的虚拟主机
+proxy_server配置过程如下：
+vim /etc/hosts
+    192.168.139.184 web.chenhao.com blog.chenhao.com
+vim /etc/nginx/conf.d/virtual.conf 
+    server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+        location  / {
+            proxy_pass  http://192.168.139.169:8080;
+       }
+
+}
+server {
+        listen       80;
+        server_name  blog.chenhao.com;
+        root         /blog/www/;
+        location  / {
+            proxy_pass  http://192.168.139.169:8081;
+       }
+
+}
+nginx -t 
+systemctl restart nginx.service
+
+backend_server配置过程
+   mkdir -pv /web/www
+   vim /web/www/index.html
+       this is from 192.168.139.169 virtualhost web.chenhao.com
+   mkdir -pv /blog/www
+   vim /blog/www/index.html
+       this is from 192.168.139.169 virtualhost blog.chenhao.com
+   yum install -y nginx
+   vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       8080;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+}
+server {
+        listen       8081;
+        server_name  blog.chenhao.com;
+        root         /blog/www/;
+}
+nginx -t 
+systemctl start nginx.service
+client节点:
+     分别访问curl http://web.chenhao.com/和curl http://blog.chenhao.com/，看是否达到了效果
+	
+ngx_http_headers_module模块配置
+		(1) add_header name value [always];
+                    add_header via  $server_addr; 向响应报文添加自定义首部，并为其赋值；
+		(2) expires [modified] time;
+		    expires epoch | max | off;允许或禁止向响应报文的Cache-Control或Expires首部添加新值或修改其值； 
+ngx_http_upstream_module模块配置
+		用于将多个服务器定义成服务器组，而由proxy_pass, fastcgi_pass,memcached_pass等指令进行引用；
+		(1) upstream name { ... }定义一个后端服务器组，name为组名称；仅能用于http上下文 ；
+		(2) server address [parameters];在upstream中定义一个服务器及其相关参数；仅能用于upstream上下文；
+			常用参数：
+                                address:
+                                      ip[:port]
+                                      host[:port]
+                                      unix:/path/to/some-socker-file
+				weight=number：定义服务器权重，默认为1；
+				max_fails=number：最大失败连接尝试次数，失败连接超时时长由fail_timeout参数指定；
+				fail_timeout=number：等待目标服务器发送响应的时长；
+				backup：备用服务器，所有主服务器均故障时才启用此主机，相当于sorry server；
+				down：手动标记其不再处理任何用户请求；
+				
+		使用方法：
+			(a) 定义upstream服务器组
+				upstream websrvs {
+					server 172.16.100.68 weight=2 max_fails=2 fail_timeout=6s;
+					server 172.16.100.6  weight=1 max_fails=2 fail_timeout=6s;
+				}				
+			（必须要先定义服务器组，才可以调用服务器组，类似fastcgi_cache和proxy_cache）
+			(b) 在反代场景中（proxy_pass, fastcgi_pass, ...）进行调用；
+				location / {
+					proxy_pass http://websrvs;
+				}
+ngx_http_upstream_module模块使用案例：
+vim /etc/nginx/conf.d/virtual.conf   确保在nginx的主配置文件nginx.conf中有include /etc/nginx/conf.d/*.conf 
+upstream  webserver {
+          server 192.168.139.169:80      weight=1 max_fails=2 fail_timeout=10s;  前面的server字段必须有，可以在此处指定不同的端口
+          server 192.168.139.171:80      weight=1 max_fails=2 fail_timeout=10s;
+          hash  $request_uri|hash  $remote_addr|least_conn;  如果没有这一句代码实现的就是轮询调度；如果要实现其他调度，左边三者都是调度算法，选择其中一个就可以
+}
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;  此时即有root指令又有location /，不会冲突，以location 里面的/为准
+        location / {
+                  proxy_pass http://webserver;
+        }
+}
+nginx -t 
+systemctl restart nginx.service
+在192.168.139.169和192.168.139.171配置好对应的主页即可，在浏览器中输入http://web.chenhao.com，看是否实现了调度效果
+		(3) ip_hash;             （调度算法之一，只用在upstream中）源地址hash，把来自同一个ip地址的请求始终发往同一个backend server，除非此backend server不可用；
+  		(4) least_conn;          （调度算法之一，只用在upstream中）最少连接；当各server权重不同时，即为加权最少连接；
+		(5) hash key [consistent];（调度算法之一，用在upstream中）指明基于hash方式进行调度时
+常用的hash key:
+hash $remote_addr：相当于ip_hash；
+hash $cookie_name：将一个用户的请求始终发往同一个backend server，能实现会话绑定的功能；此处的name为cookie某些参数的名称,此处常用的有cookie_usernam
+hash $request_uri: 将对同一个uri的请求始终发往同一个backend server，后端为cache server时特别有用；(比如varnish作为cache server时）此时考虑更多的是命中率，不是会话绑定
+		(6) health_check [parameters];(必须要在nginx2.0以上才支持）
+			健康状态检测机制；只能用于location上下文；
+			常用参数：
+				interval=time检测的频率，默认为5秒；
+				fails=number：判定服务器不可用的失败检测次数；默认为1次；
+				passes=number：判定服务器可用的失败检测次数；默认为1次；
+				uri=uri：做健康状态检测测试的目标uri；默认为/；
+				match=NAME：健康状态检测的结果评估调用此处指定的match配置块；（配合下面的match name命令）
+		(7) match name { ... }
+			对backend server做健康状态检测时，定义其结果判断机制；只能用于http上下文；
+			常用的参数：
+				status  [!]code期望的响应状态码；
+				header  HEADER=value：期望存在响应首部，也可对期望的响应首部的值基于比较操作符和值进行比较；
+                                header  HEADER=！value
+                                header  [!]HEADER
+                                header  HEADER ~ value
+				body：  ~ "string"   :期望响应报文的主体部分应该有的内容；
+				body：  !~ "string"
+               （8）向客户端展示缓存是否命中(用在location中）
+                    add_header X-cache $upstream_cache_status
+session会话保持：
+       session sticky：基于ip, nginx还可基于请求报文首部中的多种信息，例如cookie, uri；
+       session cluster：每个server均把创建和维护session同步集群中的其它主机；仅适用于较小规模的环境；
+       session server：使用一个共享的存储服务存储session信息；	
+	课外实践：
+		(1) http 重定向至https; 
+		(2) gzip效果测定；
+		(3) 各种调度算法测试；
+			hash $request_uri
+			hash $cookie_username			
+		(4) 动静分离；
+                       location ~* \.php$ {
+			      proxy_pass
+		       }
+		(5) 做方法分离；
+ngx_http_dav_module学习
+WebDAV(Web-based Distributed Authoring and Versioning)是基于HTTP 1.1的一个通信协议。它为HTTP 1.1添加了一些扩展,就是在 GET、POST、HEAD 等几个 HTTP 标准方法以外添加了
+一些新的方法,使得应用程序可以直接将文件写到 Web Server 上，并且在写文件时候可以对文件加锁，写完后对文件解锁，还可以支持对文件所做的版本控制。
+ngx_http_dav_module+auth-basic的使用案例
+]# htpasswd  -c /etc/nginx/conf.d/.nginxpasswd root  nginx支持htpasswd的加密格式,这里会提示输入密码
+]# vi /etc/nginx/conf.d/default.conf
+   server {
+      listen 80;
+      server_name 192.168.139.133;
+      location / { 
+            auth_basic "please input your passwd";
+            auth_basic_user_file  /etc/nginx/conf.d/.nginxpasswd;
+            root                  /data/www;
+            client_body_temp_path /data/client_temp;
+            dav_methods PUT DELETE MKCOL COPY MOVE;
+            create_full_put_path  on;
+            dav_access            group:rw  all:r;
+            limit_except GET {
+                  allow 192.168.1.0/32;
+                  deny  all;
+            }
+       }
+}
+]# mkdir /data/{www,client_temp} -p 
+]# chown -R nginx:nginx /data
+]# nginx -t 
+]# nginx 
+]# curl -u root:root -T /etc/passwd http://192.168.139.133  只要在/data/www目录下面可以查看到passwd文件，说明使用curl向nginx提交文件成功
+]# curl -u root:root http://192.168.139.133/passwd 验证是否可以下载成功
+nginx的所有配置案例集中如下---------------------------------------------------------------------------------------
+error_page使用案例：
+vim /web/www/404.html
+    this is from /web/www/404.html 
+vim /etc/nginx/conf.d/virtual.conf 
+server {
+        listen       80;
+        server_name  web.chenhao.com;
+        root         /web/www/;
+        error_page  404  /404.html;
+
+}
+nginx -t 
+systemctl restart nginx.service 
+curl http://web.chenhao.com/sdkfjskd如果此时出现自定义的错误信息则配置成功

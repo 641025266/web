@@ -1,0 +1,980 @@
+﻿41-1					
+WebLogic的作用和tomcat非常类似
+Tomcat：
+        tomcat本质上也一个web服务器
+	编程语言：
+		系统级：C，C++， go, erlang
+		应用组：C#，Java, Python, Perl, Ruby, php 
+			虚拟机：jvm, pvm	
+	cgi: Common Gateway Interface
+	动态网站：
+		服务端技术：php,jsp(JSP全名为Java Server Pages，中文名叫java服务器页面，其根本是一个简化的Servlet设计)
+		客户端技术：js
+		webapp server:
+	Java编程语言：
+		Sun, James Gosling, Green Project, Oak
+		Java, SunWorld
+		1995: Java 1.0, Write once ,Run Anywhere
+		1996: JDK(Java Development Kit), 包含了一个JVM（Sun Classic VM）
+		      JDK 1.0： JVM， Applet, AWT
+		1997: JDK 1.1
+		      JAR文档格式、JDBC、JavaBeans
+		1998: JDK 1.2
+			Sun把Java技术分拆为三个方向： Java 2
+				J2SE：Standard Edition
+				J2EE：Enterprise Edition
+				J2ME：Mobile Edition
+			代表性的技术：EJB，Java Plug-in, Swing, JIT编译器
+		2000: JDK 1.3
+		      1999: HotSpot JVM
+		2002: JDK 1.4
+		2006: Sun开源了Java技术，GPL，并建立了OpenJDK组织来管理此些代码；
+			Java 2 SE
+			Java 2 EE
+	编程范式的类别：指令+数据
+		过程式编程语言：以指令为中心，数据服务于指令；
+		对象式编程语言：以数据为中心，指令服务于数据；
+		Java：纯面向对象；
+		
+	Java的体系结构：
+		Java编程语言
+		Java Class文件格式
+		Java API
+		Java VM
+	jvm的核心组成：
+		Class Loader
+		执行引擎
+	Java编程语言的特性：
+		面向对象、多线程、结构化错误处理、垃圾收集、动态链接、动态扩展
+		GC
+	JVM的运行时区域：
+		方法区：线程共享；用于存储被虚拟机加载的类信息、常量、静态变量；持久代；
+		堆（heap）：是jvm所管理的内存中的最大一部分，也是GC管理的主要区域；主流的垃圾收集算法基于分代收集机制：新生代、老年代；
+		Java栈：线程私有，存储线程自己的局部变量； 
+		PC寄存器：线程独有内存空间；
+		本地方法栈	
+	JAVA 2 EE:
+		JAVA 2 SE: JDK 
+		Servlet, JSP, EJB, JMS, JMX, JavaMail, ...
+		JSP 
+			<html>
+				<title>
+				</title>
+				<body>
+					<h1>...</h1>
+					<%
+						
+					%>
+				</body>
+			</html>
+		a.jsp --> jasper --> a.class 
+		web container:
+			JDK, Servlet, JSP
+			商业实现：
+				WebSphere(IBM)
+				WebLogic (BEA --> Orace)
+				Oc4j
+				Glassfish
+				Geronimo
+				JOnAS
+				JBoss
+			开源实现：
+				Tomcat（总结起来就是，tomcat是J2SE的开源实现）
+				Jetty
+				Resin
+				
+	Tomcat：
+		Servlet container,Java  Web Server, JWS,ASF, JServ
+                Servlet（Server Applet）是Java Servlet的简称，称为小服务程序或服务连接器，用Java编写的服务器端程序，主要功能在于交互式地浏览和修改数据，生成动态Web内容。
+		Tomcat 3.x, 
+		2001: tomcat 4.0, catalina, 8.x
+		
+		JAVA 2 EE: Servlet, JSP, JMX
+			EJB: Enterprise JavaBeans 
+			JMS: 
+			JMX: Java Management Extensions
+			JTA：
+			JavaMail：
+			
+		JAVA 2 SE:
+			JNDI: Java Naming and Directory Interface, LDAP
+			JAXP：Java API for XML processing 
+			
+		http://www.magedu.com/
+			/var/www/html/
+				bbs/
+				wordpress/
+			http://www.magedu.com/bbs
+		tomcat的组件：--重要
+			<Server>
+				<Service>
+					<connector/>
+					<connector/>
+					<Engine>
+						<Host /> 这可以理解为是host1
+                                                <Host>   这可以理解为是host2
+							<Context/>
+							...
+						</Host>
+					</Engine>
+				</Service>
+			</Server>	
+			每个组件，均由java类来实现；
+			此些组件可分为如下几类：--重要
+				顶级组件：Server
+				服务类：Service
+				连接器：http, https, ajp(apache jserv protocol，是定向包协议)
+				容器类：Engine, Host, Context
+				被嵌套的组件：valve, logger, realm, loader, manager
+				集群类组件：listener, ...
+
+问题：
+    tomcat可以被单独访问，此时访问来自客户端浏览器
+    tomcat结合httpd，做虚拟主机时，httpd和tomcat所在主机都需要修改/etc/hosts文件
+    tomcat和httpd最好分开成两台主机安装			
+		tomcat的具体安装步骤：
+                       (1) 使用Oracle JDK和tomcat主站提供的编译完成的程序包 
+                           http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html 这个页面下载oracle jdk
+                                tar -zxvf jdk-8u161-linux-x64.tar.gz -C /usr/local  已经下载好tar包
+			        vim /etc/profile.d/java.sh
+                                    export JAVA_HOME=/usr/local/
+				tar  xf  apache-tomcat-VERSION-tar.gz   -C  /usr/local  已经下载好tar包
+				cd  /usr/local
+				ln  -s  apache-tomcat-VERSION  tomcat
+				tomcat的目录结构：--重要
+					bin: 脚本及启动时用到类；
+					lib：类库；
+					conf：配置文件；
+					logs：日志文件；
+					webapps：webapp的默认部署目录；
+					work：工作目录；
+					temp：临时文件目录；
+			(2) 系统自带的openjdk+tomcat；
+			    yum install java-1.7.0-openjdk  java-1.7.0-openjdk-devel
+                            java -version 
+                            vim /etc/profile.d/java.sh
+				export JAVA_HOME=/usr/bin
+                            yum install tomcat tomcat-lib  tomcat-webapps  tomcat-admin-webapps  -y 
+                            service tomcat start
+                            netstat -tunlp 
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address               Foreign Address             State       PID/Program name   
+tcp        0      0 :::8080                     :::*                        LISTEN      2153/java      http监听端口       
+tcp        0      0 ::ffff:127.0.0.1:8005       :::*                        LISTEN      2153/java      tomcat实例，即运行的一个jvm进程；监听于8005端口接收“SHUTDOWN    
+tcp        0      0 :::8009                     :::*                        LISTEN      2153/java      ajp监听端口
+                            在浏览器中输入http://server:8080是否可以访问，http端口可以直接访问，但是ajp端口不能直接访问
+                            rpm -ql tomcat 查看tomcat的生成文件
+                            /etc/tomcat是配置文件所在目录
+                         # ll /var/lib/tomcat/webapps/  是数据库目录
+total 20
+drwxr-xr-x 8 tomcat tomcat 4096 Sep  7 03:07 examples
+drwxr-xr-x 5 root   tomcat 4096 Sep  7 02:54 host-manager
+drwxr-xr-x 5 root   tomcat 4096 Sep  7 02:54 manager
+drwxr-xr-x 3 tomcat tomcat 4096 Sep  7 03:13 ROOT
+drwxr-xr-x 5 tomcat tomcat 4096 Sep  7 03:08 sample
+补充说明:tomcat服务默认的主页面就是/var/lib/tomcat/webapps/ROOT/index.php
+
+tomcat的管理员访问配置：
+]# vi /etc/tomcat/tomcat-users.xml
+.......
+<role rolename="admin"/>  这段配置默认就是有的，但是被注销了，改过来即可
+<role rolename="admin-gui"/>
+<role rolename="admin-script"/>
+<role rolename="manager"/>
+<role rolename="manager-gui"/>
+<role rolename="manager-script"/>
+<role rolename="manager-jmx"/>
+<role rolename="manager-status"/>
+<user name="admin" password="admin" roles="admin,manager,admin-gui,admin-script,manager-gui,manager-script,manager-jmx,manager-status" />
+</tomcat-users>
+]# service tomcat restart
+再次访问http://server:8080，点击Manager App，出现界面框后输入账号admin，密码admin即可，如果还是不能访问，请做如下动作
+]# vi  /var/lib/tomcat/webapps/manager/META-INF/context.xml
+   allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1|192.168.139.*" />  假设客户端地址是192.168.139.*，这里实际就是白名单
+]# service tomcat restart
+再次访问即可
+
+
+		tomcat的配置文件：对应的就是/etc/tomcat目录
+			server.xml：主配置文件；
+			context.xml：每个webapp都可以有专用的配置文件，这些配置文件通常位于webapp程序目录下的WEB-INF目录中，用于定义会话管理、JDBC等
+			web.xml：每个webapp只有在“部署”之后才能够被访问；此文件则用于为各webapps定义默认的部署操作方式； 
+			tomcat-users.xml：用户认证的账号和密码配置文件；
+			catalina.policy：当使用-security选项来启动tomcat实例时会读取此配置文件来实现基于安全策略的运行方式；
+			catalina.properties：Java属性的定义文件，用于设定类加载器路径等 ，以及一些与JVM性能相关的调优参数；
+			logging.properties：日志系统相关的配置；
+		Java Webapp的组织结构：--重要
+			有特定的组织形式、层次型的目录结构；主要包含了servlet代码文件、JSP页面文件、类文件、部署描述符文件等 ；
+				/：根目录就是/var/lib/tomcat/webapps，类似httpd的/var/www/html目录
+				index.jsp：jsp的主页面文件
+				WEB-INF/：当前webapp的私有资源目录，通常存放当前webapp自用的web.xml；
+				META-INF/：当前webapp的私有资源目录，通常存储当前webapp自用的context.xml；
+				classes/: 当前webapp的私有类；
+				lib/：当前webapp的私有类，被打包成jar格式；
+			webapp归档格式：
+				.war：webapp
+				.jar：EJB的类；
+				.rar：资源适配器；
+				.ear：企业级应用程序；
+				
+回顾：
+	java技术体系：Java编程语言，Java class文件格式，Java API, Java VM
+		J2SE => JAVA 2 SE
+		J2EE => JAVA 2 EE
+		J2ME => JAVA 2 ME
+	JAVA 2 SE: jdk (java development kit)
+		Servlet, JSP, JMX, EJB, JMS, JavaMail, ...
+		商业实现：WebSphere,  WebLogic, Oc4j, ...
+		开源实现：Jetty, Resin，Tomcat（总结起来就是，tomcat是J2SE的开源实现）
+	jsp --> jasper --> servlet(PAGE_jsp.java) --> complier --> bytecode (字节码，PAGE_jsp.class) --> JVM 
+			
+tomcat(2) 
+	一个测试应用程序的具体操作步骤：
+		1、创建webapp特有的目录结构；
+                        cd /var/lib/tomcat/webapps
+			mkdir  -pv  myapp/{classes,lib,WEB-INF,META-INF}
+		2、提供webapp的测试页面：
+			vim myapp/index.jsp 
+			<%@ page language="java" %>
+			<%@ page import="java.util.*" %>
+			<html>
+				<head>
+					<title>JSP Test Page</title>
+				</head>
+				<body>
+					<% out.println("hello world");
+					%>
+				</body>
+			</html>	
+                 3、http://server:8080/myapp/index.jsp访问成功说明配置正常		
+				
+		部署（deploy）webapp的相关操作：
+		deploy：将webapp的源文件放置于目标目录、配置tomcat服务器能够基于context.xml文件中定义的路径来访问此webapp；
+                将其特有的类通过class loader装载至tomcat：
+				有两种部署方式：
+					自动部署：auto deploy
+					手动部署：
+						(1) 冷部署：把webapp复制到指定位置，而后才启动tomcat；
+						(2) 热部署：在不停止tomcat的前提下进行的部署，部署工具有：manager app、ant脚本、tcd（Tomcat Client Deployer）等；
+			undeploy：反部署，停止webapp，并从tomcat实例上拆除其部署文件和部署名；
+			stop：停止，不再向用户提供服务；
+			start：启动处于“停止”状态的webapp；
+			redeploy：重新部署；
+		tomcat自带的应用程序：
+			manager app: webapp管理工具；
+			host manager: VHosts管理工具；
+		tomcat的常用组件：
+			每个组件几乎都是通过特有的类来实现，而且有的组件还不止一种实现方式；
+			Server：tomcat实例，即运行的一个jvm进程；监听于8005端口接收“SHUTDOWN”。各server监听的端口不能相同，因此，
+                                一个物理主机上启动多个server实例应该使用不同的端口；
+			service：用于实现将一个或多个connector关联至一个engine；
+			connector组件：
+				进入tomcat的请求可分为两类：
+					tomcat做为独立的应用程序服务器：standalone，此时请求将来自于浏览器,且要修改/etc/hosts中的主机名http, https
+					tomcat做为应用程序服务器：请求将来自于前面反代主机
+						httpd: http, https, ajp
+						nginx: http, https
+				属性：
+					address：监听的IP地址；
+					maxThreads：最大并发连接数，默认为150；
+					port：监听的端口；
+					protocol：连接器使用的协议，一般为HTTP/1.1或AJP/1.3；
+					redirecPort：
+					connectionTimeout：连接的超时时长，单位为毫秒，默认为60000；
+					enableLookups：
+					acceptCount：定义等待队列的长度；
+					scheme：
+					debug：
+					secure：
+					clinetAuth：
+					sslProtocol:
+			Engine：Servlet的一个实例，即servlet引擎，其内部可以有一个或多个Host组件来定义站点；通常需要通过defaultHost的属性定义默认虚拟主机；
+				属性：
+					name=
+					defaultHost=
+					jvmRoute=
+					
+			Host组件：
+				位于Engine容器中用于接收请求并进行相应处理的主机或虚拟主机，如前面示例中的定义：
+                                对应/etc/tomcat/server.xml配置文件里面的内容
+				<Host name="localhost" appBase="webapps"
+				      unpackWARs="true" autoDeploy="true"
+				      xmlValidation="false" xmlNamespaceAware="false">
+						
+				</Host>
+
+				常用属性说明：
+				1) appBase：此Host的webapps目录，即存放非归档的web应用程序的目录或归档后的WAR文件的目录路径；可以使用基于$CATALINA_HOME的相对路径；
+				2) autoDeploy：在Tomcat处于运行状态时放置于appBase目录中的应用程序文件是否自动进行deploy；默认为true；
+				3) unpackWars：在启用此webapps时是否对WAR格式的归档文件先进行展开；默认为true；
+
+41-5
+               定义虚拟主机的具体操作步骤：(重启tomcat比较慢)
+                                1）vim /etc/hosts 
+                                       192.168.139.192 bbs.chenhao.com  此时tomcat做为独立的应用程序服务器，必须要修改主机名才能访问
+                                2）vim /etc/tomcat/server.xml 
+				<Engine name="Catalina" defaultHost="localhost">
+					<Host name="localhost" appBase="webapps"> 默认主机，appBase表示根目录
+					<Context path="" docBase="ROOT"/>
+					<Context path="/bbs" docBase="/web/bss" reloadable="true" crossContext="true"/>  
+					</Host>
+					<Host name="bbs.chenhao.com" appBase="/data/webapps/" unpackWARs="true" autoDeploy="true">	自定义的虚拟主机
+					</Host>
+				</Engine>
+				3）为自定义的虚拟主机提供测试webapp：
+					mkdir  -pv  /data/webapps/ROOT/{classes,lib,WEB-INF,META-INF} 自定义的虚拟主机数据库目录必须要有ROOT
+                                        vim /data/webapps/ROOT/index.jsp
+                                            this is from  /data/webapps/ROOT/index.jsp
+                                4）在浏览器中输入http://bbs.chenhao.com:8080 访问成功即ok
+					
+Context组件，实际就是路径映射的具体操作步骤：
+				务必配置好上面的虚拟机
+                                2）vim /etc/tomcat/server.xml 
+				<Engine name="Catalina" defaultHost="localhost">
+					<Host name="localhost" appBase="webapps"> 
+					<Context path="" docBase="ROOT"/>
+					<Context path="/bbs" docBase="/web/bss" reloadable="true" crossContext="true"/>  
+					</Host>
+					<Host name="bbs.chenhao.com" appBase="/data/webapps">
+	                                      <Context  path="/test"  docBase="/web/www/" reloadable="true"/>
+					</Host>
+				</Engine>
+                               3）为/web/www/提供一个测试页面
+                                mkdir /web/www/ -pv  做路径映射时不需要创建ROOT目录，重要
+                                vim /web/www/index.html
+                                    this is from /web/www/index.html
+                               4）在浏览器中输入http://bbs.chenhao.com:8080/test 访问成功即ok
+                               注意：
+                                 reloadable表示资源改变后，是否重新加载
+                                 Context(字母C必须大写） path="/test"(必须不能在最后带/)  docBase（字母B必须大写）
+					
+Valve类似于过滤器，它可以工作于Engine和Host/Context之间、Host和Context之间以及Context和Web应用程序的某资源之间。一个容器内可以建立多个Valve，
+而且Valve定义的次序也决定了它们生效的次序。Tomcat6中实现了多种不同的Valve：
+             AccessLogValve：访问日志Valve（常用）
+             ExtendedAccessValve：扩展功能的访问日志Valve
+             JDBCAccessLogValve：通过JDBC将访问日志信息发送到数据库中；
+             RequestDumperValve：请求转储Valve；
+             RemoteAddrValve：基于远程地址的访问控制；（常用）
+             RemoteHostValve：基于远程主机名称的访问控制（常用）
+				<Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"
+					prefix（前缀）="node2_access_log" suffix（后缀）=".log"
+					pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+					
+                                <Context path="/probe" docBase="probe">
+                                         <Valve className="org.apache.catalina.valves.RemoteAddrValve" allow="127\.0\.0\.1"/>
+                                </Context>（表示只有127.0.0.1可以访问probe，其他地址都不能访问）
+
+				课外实践：将tomcat的访问日志格式定义为combined类型；
+				
+	LNMT：由LNMP发展来
+		Client --> http --> Nginx --> reverse_proxy (http) --> tomcat (http connector)
+		
+		location /  {
+			proxy_pass  http://web1.magedu.com:8080/;
+		}
+		
+		或者
+		
+		location ~* \.(jsp|do)$ {
+			proxy_pass http://app1.magedu.com:8080;
+		}
+		
+	LAMT: 由LAMP发展来
+		Client --> http --> httpd --> reverse_proxy_module (http) --> tomcat (http connector)
+		Client --> http --> httpd --> reverse_proxy_module (ajp) --> tomcat (ajp connector)	
+
+		第一种方式：proxy_module, proxy_http_module
+		第二种方式：proxy_module, proxy_ajp_module
+		
+		(1) proxy_module+proxy_http_module的具体操作步骤：
+                        先确保配置好上面案例的虚拟机
+                        vim /etc/hosts
+                            192.168.139.192 web.chenhao.com bbs.chenhao.com
+                        vim /etc/httpd.conf  针对的是编译的http 2.4版本
+                            vim /etc/httpd.conf
+                                LoadModule proxy_module modules/mod_proxy.so
+                                LoadModule proxy_http_module modules/mod_proxy_http.so
+                                LoadModule proxy_ajp_module modules/mod_proxy_ajp.so
+                                LoadModule proxy_balancer_module modules/mod_proxy_balancer.so
+                                LoadModule slotmem_shm_module modules/mod_slotmem_shm.so    
+                                LoadModule lbmethod_byrequests_module modules/mod_lbmethod_byrequests.so 
+                               #LoadModule lbmethod_bytraffic_module modules/mod_lbmethod_bytraffic.so
+                               #LoadModule lbmethod_bybusyness_module modules/mod_lbmethod_bybusyness.so
+                                Include /etc/extra/httpd-vhosts.conf 
+                                同时注销掉中心主机的DocumentRoot
+                        vim /etc/extra/httpd-vhosts.conf  
+			    <VirtualHost *:80>
+				ServerName web.chenhao.com
+				ProxyRequests Off
+				ProxyVia On 
+				ProxyPreserveHost Off 
+				<Proxy *>  表示所有的代理
+					Require all granted
+				</Proxy>
+				ProxyPass / http://bbs.chenhao.com:8080/
+				ProxyPassReverse / http://bbs.chenhao.com:8080/
+				<Location />
+					Require all granted 
+				</Location>
+			    </VirtualHost>
+                         service httpd start 
+                         在浏览器中输入http://web.chenhao.com，访问成功即OK 
+
+补充说明：非常重要
+          ProxyPreserveHost On表示保留客户端的请求，则http://web.chenhao.com请求到的是tomcat的默认主机，
+          ProxyPreserveHost Off表示不保留客户端的请求，则http://web.chenhao.com会被反向代理成http://bbs.chenhao.com:8080/，这才是想要的结果
+		
+		(2) proxy_module+proxy_ajp_module的具体操作步骤：
+                            vim /etc/httpd.conf
+                                LoadModule proxy_module modules/mod_proxy.so
+                                LoadModule proxy_http_module modules/mod_proxy_http.so
+                                LoadModule proxy_ajp_module modules/mod_proxy_ajp.so
+                                LoadModule proxy_balancer_module modules/mod_proxy_balancer.so
+                                LoadModule slotmem_shm_module modules/mod_slotmem_shm.so    
+                                LoadModule lbmethod_byrequests_module modules/mod_lbmethod_byrequests.so 
+                               #LoadModule lbmethod_bytraffic_module modules/mod_lbmethod_bytraffic.so
+                               #LoadModule lbmethod_bybusyness_module modules/mod_lbmethod_bybusyness.so
+                                Include /etc/extra/httpd-vhosts.conf 
+                                同时注销掉中心主机的DocumentRoot
+                       vim /etc/extra/httpd-vhosts.conf 
+			<VirtualHost *:80>
+				ServerName web.chenhao.com
+				ProxyRequests Off
+				ProxyVia On
+				ProxyPreserveHost Off
+				<Proxy *>
+					Require all granted
+				</Proxy>
+				ProxyPass / ajp://bbs.chenhao.com:8009/
+				ProxyPassReverse / ajp://bbs.chenhao.com:8009/
+				<Location />
+					Require all granted
+				</Location>
+			</VirtualHost>
+                      
+                      service httpd restart 
+                      在浏览器中输入http://web.chenhao.com，访问成功即OK 
+		
+			
+42-1 
+Tomcat Cluster(3)
+
+会话保持的实现方式
+      （1）session sticky，会话绑定，有损负载均衡性能
+           包括source ip
+               cookie
+               hash header
+           session sticky实现方式有nginx，httpd，haproxy，lvs
+      （2）session cluster，会话集群
+           由tomcat自己实现，但是节点数不能太多，因为每个节点都要保持所有会话信息
+           session cluster实现方式tomcat delta manager,tomcat session cluster
+      （3）session  server
+           session server实现方式由memcached，varnish，redis实现	
+
+		
+apache+tomcats
+的组合方式	
+  (1) apache: 
+				
+      mod_proxy
+	
+      mod_proxy_http
+				
+      mod_proxy_balancer
+			
+      tomcat:
+http connector
+		
+  (2) apache: 
+				
+      mod_proxy
+				
+      mod_proxy_ajp
+				
+      mod_proxy_balancer				
+			
+      tomcat:
+ajp connector
+		
+  (3) apache:
+mod_jk
+			
+      tomcat:
+ajp connector
+
+
+	
+第一种方法的实现：
+
+   vim /etc/hosts
+      192.168.139.192 web.chenhao.com bbs.chenhao.com
+ 
+
+  vim /etc/httpd.conf
+      LoadModule proxy_module modules/mod_proxy.so
+      LoadModule proxy_http_module modules/mod_proxy_http.so
+      LoadModule proxy_ajp_module modules/mod_proxy_ajp.so
+      LoadModule proxy_balancer_module modules/mod_proxy_balancer.so
+      LoadModule slotmem_shm_module modules/mod_slotmem_shm.so    此模块也必须开启，否则负载均衡有问题
+      LoadModule lbmethod_byrequests_module modules/mod_lbmethod_byrequests.so 如下三个模块针对的是负载均衡调度算法，开启其一即可
+     #LoadModule lbmethod_bytraffic_module modules/mod_lbmethod_bytraffic.so
+     #LoadModule lbmethod_bybusyness_module modules/mod_lbmethod_bybusyness.so
+      Include /etc/extra/httpd-vhosts.conf 
+      同时注销掉中心主机的DocumentRoot
+  vim /etc/extra/httpd-vhosts.conf 		
+  <proxy balancer://lbcluster>
+		    
+      BalancerMember http://192.168.139.192:8080 loadfactor=10 route=TomcatA
+	（loadfactor就是weight权重意思）	    
+      BalancerMember http://192.168.139.169:8080 loadfactor=10 route=TomcatB
+
+      proxyset lbmethod=byrequests     byrequests表示roundrobin		
+  </proxy>
+
+		
+  <VirtualHost *:80>
+		    
+     ServerName web.chenhao.com
+		    
+     ProxyVia On
+		    
+     ProxyRequests Off
+		    
+     ProxyPreserveHost Off（要看负载均衡效果最好设置为off）		    
+     <Proxy *>
+		        
+        Require all granted
+		    
+     </Proxy>
+		    
+     ProxyPass / balancer://lbcluster/
+		    
+     ProxyPassReverse / balancer://lbcluster/
+		    
+    <Location />
+		        
+       Require all granted
+		    
+    </Location>
+		
+  </VirtualHost>
+
+
+
+  分别在192.168.139.192和192.168.139.169主机上提供自定义的tomcat主页
+  vim /var/lib/tomcat/webapps/ROOT/index.html
+      this is from 192.168.139.192 tomcat home page
+  vim /var/lib/tomcat/webapps/ROOT/index.html
+      this is from 192.168.139.169 tomcat home page
+  service httpd start 
+  service tomcat start 
+  如果中间有错误，查看httpd的error日志
+
+补充说明：
+   如果需要会话绑定，参考如下操作步骤即可，但较少使用				
+   Header add Set-Cookie "ROUTEID=.%{BALANCER_WORKER_ROUTE}e; path=/" env=BALANCER_ROUTE_CHANGED
+ 			
+   <proxy balancer://lbcluster>
+			    
+       BalancerMember http://172.16.100.68:8080 loadfactor=10 route=TomcatA
+			    
+       BalancerMember http://172.16.100.69:8080 loadfactor=10 route=TomcatB
+			    
+       ProxySet stickysession=ROUTEID
+			
+   </proxy>
+
+			
+   <VirtualHost *:80>
+			    
+       ServerName web.chenhao.com   			    
+       ProxyVia On
+			    
+       ProxyRequests Off
+			    
+       ProxyPreserveHost Off			    
+       <Proxy *>
+			        
+           Require all granted
+			   
+       </Proxy>
+			    
+       ProxyPass / balancer://lbcluster/
+			    
+       ProxyPassReverse / balancer://lbcluster/
+			    
+       <Location />
+			        
+           Require all granted
+			   
+       </Location>
+			
+     </VirtualHost>		
+
+	
+
+第二种方法的实现：			
+    <proxy balancer://lbcluster>
+		    
+            BalancerMember ajp://172.16.100.68:8009 loadfactor=10 route=TomcatA
+		    
+            BalancerMember ajp://172.16.100.69:8009 loadfactor=10 route=TomcatB
+		            
+            proxyset lbmethod=byrequests		
+    </proxy>
+
+		
+    <VirtualHost *:80>
+		    
+            ServerName web.chenhao.com   
+            ProxyVia On
+		            
+            ProxyRequests Off
+		    
+            ProxyPreserveHost Off		    
+    <Proxy *>
+		        
+       Require all granted
+		    
+    </Proxy>
+		           
+       ProxyPass / balancer://lbcluster/
+		    
+       ProxyPassReverse / balancer://lbcluster/
+		    
+    <Location />
+		        
+       Require all granted
+	
+    </Location>
+		
+    </VirtualHost>
+
+
+
+
+
+补充:mod_proxy_balancer模块内置的manager，即启用管理接口
+   在/etc/extra/http-vhosts.conf配置文件中增加如下代码即可
+   <location /balancer-manager>
+          sethandler balancer-manager
+          proxypass !
+          require  all granted 
+   </location>	
+
+
+第三种方式：
+Client --> http --> httpd --> mod_jk (ajp) --> tomcat (ajp connector)
+编译
+mod_jk需要用到apxs，
+1）如果httpd是yum安装的，则没有生成apxs，此时需要yum install -y httpd-devel
+2）如果http是编译安装的，则在apache的编译目录/bin里面有apxs，此时不需要安装yum install -y httpd-devel
+	
+mod_jk：额外编译安装
+
+
+在tomcat.apache.org下载mod-jk.so
+安装步骤：
+tar -zxvf tomcat-connectors-1.2.42-src.tar.gz
+cd 	  tomcat-connectors-1.2.42-src/native
+./configure --with-apxs=/usr/local/apache/bin/apxs   要查看具体的apxs在哪个位置
+make 
+make install 
+然后在httpd的modules目录查看是否有mod_jk.so，
+		
+  (1) 反向代理
+
+      常规的其他配置参考上面案例		
+      模块配置文件：
+      vim /etc/extra/http-vhosts.conf  
+				
+      LoadModule  jk_module  modules/mod_jk.so
+			       
+      JkWorkersFile  /etc/extra/workers.properties
+				
+      JkLogFile  logs/mod_jk.log
+				
+      JkLogLevel  debug
+	      
+      JkMount  /*  TomcatA
+     --这里表明在什么情况下使用什么样的主机，重要				
+      JkMount  /status/  stat1
+
+			
+   workers配置文件：
+      vim /etc/extra/workers.properties
+		      
+      worker.list=TomcatA,stat1
+				
+      worker.TomcatA.port=8009
+				
+      worker.TomcatA.host=192.168.139.169	      
+      worker.TomcatA.type=ajp13
+				
+      worker.TomcatA.lbfactor=1
+				
+      worker.stat1.type =status
+
+(内置状态页）
+  service httpd restart 
+  httpd主机地址是192.168.139.192,tomcat主机地址是192.168.139.169，在浏览器中输入http://192.168.139.192,如果能访问到192.168.139.169的tocmat主页即成功
+  注意：status的访问可以做访问控制，也可以不做
+
+
+		
+  (2) 在上（1）的基础上做负载均衡
+			
+      模块配置文件：
+       vim /etc/extra/httpd-vhosts.conf
+				
+       LoadModule  jk_module  modules/mod_jk.so
+				
+       JkWorkersFile  /etc/extra/workers.properties
+				
+       JkLogFile  logs/mod_jk.log
+				
+       JkLogLevel  debug
+				
+       JkMount  /*  lbcluster
+				
+       JkMount  /status/  stat1
+
+			
+     workers配置文件：
+       vim /etc/extra/workers.properties
+				
+       worker.list = lbcluster,stat1
+				
+       worker.TomcatA.type = ajp13
+				
+       worker.TomcatA.host = 192.168.139.192				
+       worker.TomcatA.port = 8009
+				
+       worker.TomcatA.lbfactor = 1
+
+				
+       worker.TomcatB.type = ajp13
+				
+       worker.TomcatB.host = 192.168.139.169				
+       worker.TomcatB.port = 8009
+				
+       worker.TomcatB.lbfactor = 1
+
+				
+       worker.lbcluster.type = lb
+				
+       worker.lbcluster.sticky_session = 0
+|1（0表示禁用session绑定，1表示启用session绑定）				
+       worker.lbcluster.balance_workers = TomcatA, TomcatB
+				
+       worker.stat1.type = status
+  service httpd restart 
+  httpd主机地址是192.168.139.192,tomcat主机地址是192.168.139.169，在浏览器中输入http://192.168.139.192,
+  如果能轮流访问到192.168.139.169和的192.168.139.192的tocmat主页即成功
+
+
+42-3
+会话保持之session cluster
+tomcat Session replication  Cluster：
+		
+TomcatA所在的192.168.139.192具体操作步骤：	
+  (1) 配置启用集群
+     a：如下配置信息可以放在server.xml的engine或者host中，如果配置信息放置在engine中，则对engine内的所有主机都生效，如果配置信息放置在host中，则只对当前主机生效
+        本次案例放在engine中
+     b：如下配置信息在http://tomcat.apache.org/tomcat-7.0-doc/cluster-howto.html复制即可
+     c：确保engine中的jvmRoute=tomcatA或者tomcatB与httpd中的调度名称保持一致
+        vim /etc/tomcat/server.xml   
+   <Engine name="Catalina" defaultHost="localhost" jvmRoute="TomcatA">  此处一定要加jvmRoute
+    <Cluster className="org.apache.catalina.ha.tcp.SimpleTcpCluster"  channelSendOptions="8">
+      <Manager className="org.apache.catalina.ha.session.DeltaManager" expireSessionsOnShutdown="false" notifyListenersOnReplication="true"/>
+      <Channel className="org.apache.catalina.tribes.group.GroupChannel">
+      <Membership className="org.apache.catalina.tribes.membership.McastService" address="228.0.0.4" port="45564" frequency="500" dropTime="3000"/>
+      <Receiver className="org.apache.catalina.tribes.transport.nio.NioReceiver" address="192.168.139.171" port="4000" autoBind="100" selectorTimeout="5000"                      
+         maxThreads="6"/>
+      <Sender className="org.apache.catalina.tribes.transport.ReplicationTransmitter">
+      <Transport className="org.apache.catalina.tribes.transport.nio.PooledParallelSender"/>
+      </Sender>
+      <Interceptor className="org.apache.catalina.tribes.group.interceptors.TcpFailureDetector"/>
+      <Interceptor className="org.apache.catalina.tribes.group.interceptors.MessageDispatch15Interceptor"/>
+      </Channel>
+      <Valve className="org.apache.catalina.ha.tcp.ReplicationValve" filter=""/>
+      <Valve className="org.apache.catalina.ha.session.JvmRouteBinderValve"/>
+      <Deployer className="org.apache.catalina.ha.deploy.FarmWarDeployer" tempDir="/tmp/war-temp/" deployDir="/tmp/war-deploy/" watchDir="/tmp/war-listen/"                         
+        watchEnabled="false"/>
+      <ClusterListener className="org.apache.catalina.ha.session.JvmRouteSessionIDBinderListener"/>（官方文档中此处没有/）
+      <ClusterListener className="org.apache.catalina.ha.session.ClusterSessionListener"/>（官方文档中此处没有/）
+   </Cluster>
+    ...... 
+注意：
+<Membership className="org.apache.catalina.tribes.membership.McastService" address="228.0.0.4"（可以修改，也可以不修改）
+<Receiver className="org.apache.catalina.tribes.transport.nio.NioReceiver" address="192.168.139.192"（修改成TomcatA主机所在的192.168.139.192）
+    
+ (2) 为需要使用session cluster的webapps开启session distribution的功能：
+     vim /var/lib/tomcat/webapps/ROOT/WEB-INF
+/web.xml  直接修改tomcat默认主机内的web.xml，因为上面的mod_jk负载均衡的就是tomcat默认主机
+         <web-app xmlns="http://java.sun.com/xml/ns/javaee"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://java.sun.com/xml/ns/javaee
+                  http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
+                  version="3.0"
+                  metadata-complete="true">
+           <distributable/> 
+           <display-name>Welcome to Tomcat</display-name>
+           <description>Welcome to Tomcat</description>
+        </web-app>
+      
+      主要就是增加<distributable/>
+
+ 这句代码，表示基于delta manager做集群会话管理
+         
+ （3）提供测试页面
+      vim /var/lib/tomcat/webapps/ROOT/index.jsp
+<%@ page language="java" %>
+<html>
+  <head><title>TomcatA</title></head>
+  <body>
+    <h1><font color="red">TomcatA.chenhao.com</font></h1>
+    <table align="centre" border="1">
+      <tr>
+        <td>Session ID</td>
+    <% session.setAttribute("chenhao.com","chenhao.com"); %>
+        <td><%= session.getId() %></td>
+      </tr>
+      <tr>
+        <td>Created on</td>
+        <td><%= session.getCreationTime() %></td>
+     </tr>
+    </table>
+  </body>
+</html>
+
+TomcatB所在的192.168.139.169具体操作步骤：
+      前面两步同TomcatA所在的192.168.139.192具体操作步骤一样
+     （3）vim /var/lib/tomcat/webapps/ROOT/index.jsp
+<%@ page language="java" %>
+<html>
+  <head><title>TomcatB</title></head>
+  <body>
+    <h1><font color="blue">TomcatB.chenhao.com</font></h1>
+    <table align="centre" border="1">
+      <tr>
+        <td>Session ID</td>
+    <% session.setAttribute("chenhao.com","chenhao.com"); %>
+        <td><%= session.getId() %></td>
+      </tr>
+      <tr>
+        <td>Created on</td>
+        <td><%= session.getCreationTime() %></td>
+     </tr>
+    </table>
+  </body>
+</html>
+
+
+测试验证：
+        1）配置好TomcatA和TomcatB两台主机后，务必要先单独测试http://192.168.139.171:8080和http://192.168.139.192:8080都是访问正常的，否则无法验证会话绑定效果
+        2）在任意浏览器中访问http://192.168.139.192/，访问结果如下所示，其session ID在负载均衡环境中保持不变（也就是sessionID不变，但是hostname会变）
+           说明会话绑定成功
+       TomcatA.chenhao.com
+       Session ID 	85FD0B6227AB3E21F6C66293BA594B98.TomcatA
+       Created on 	1504888936102
+
+       TomcatB.chenhao.com
+       Session ID 	85FD0B6227AB3E21F6C66293BA594B98.TomcatB
+       Created on 	1504888936102
+     
+
+
+会话保持之session server，memcache作为session server的实现方式
+前提：
+两个tomcat节点：192.168.139.192(tomcatA.chenhao.com)，192.168.139.171(tomcatB.chenhao.com)
+两个memcached节点：192.168.139.192和192.168.139.171
+memcached-session-manager（简称msm）项目地址，http://code.google.com/p/memcached-session-manager/
+
+memcache作为session server的具体操作步骤：
+  为了避免受之前的session cluster影响，最好找两个干净的节点来配置--非常重要
+  TocmatA所在的192.168.139.192节点具体配置：
+下载如下jar文件至各tomcat节点的tomcat安装目录下的lib目录中，其中的${version}要换成你所需要的版本号，tc${6,7,8}要换成与tomcat版本相同的版本号。
+1）rpm -ql tomcat-lib可以发现yum安装的tomcat的lib是/usr/share/java/tomcat/
+2）ll /usr/share/tomcat/  该lib目录是/usr/share/java/tomcat/的链接
+   lrwxrwxrwx 1 root tomcat   22 Sep  7 02:54 lib -> /usr/share/java/tomcat
+3）复制如下文件到/usr/share/java/tomcat/目录内，同时取消其执行权限chmod -x filename
+	memcached-session-manager-${version}.jar
+	memcached-session-manager-tc${6,7,8}-${version}.jar
+	spymemcached-${version}.jar
+	msm-javolution-serializer-${version}.jar（序列化工具）
+	javolution-${version}.jar
+4）yum install memcached -y 
+5）start memcached start 监听在11211端口
+6）在server.xml的某host上定义一个用于测试的context容器，并在其中创建一个会话管理器，本次以默认主机进行配置
+    vim /etc/tomcat/server.xml
+        <Engine name="Catalina" defaultHost="localhost" jvmRoute="TomcatA">
+           <Host name="localhost"  appBase="webapps" unpackWARs="true" autoDeploy="true">
+           <Context path="/test" docBase="/web/www/" reloadable="true">
+              <Manager className="de.javakaffee.web.msm.MemcachedBackupSessionManager"  memcachedNodes="n1:192.168.139.192:11211,n2:192.168.139.171:11211"
+                failoverNodes="n1"
+                requestUriIgnorePattern=".*\.(ico|png|gif|jpg|css|js)$"
+                transcoderFactoryClass="de.javakaffee.web.msm.serializer.javolution.JavolutionTranscoderFactory"/>
+           </Context>
+           .........
+
+本质上就是引用了一个MemcachedBackupSessionManager
+注意：
+  failoverNodes="n1"（表示n1是备用节点）
+  requestUriIgnorePattern=".*\.(ico|png|gif|jpg|css|js)$"（对静态资源不做会话保持）
+
+7）为context提供测试页面
+      # mkdir -pv /web/www
+      # vim /web/www/index.jsp
+<%@ page language="java" %>
+<html>
+  <head><title>TomcatA</title></head>
+  <body>
+    <h1><font color="red">TomcatA.chenhao.com</font></h1>
+    <table align="centre" border="1">
+      <tr>
+        <td>Session ID</td>
+    <% session.setAttribute("chenhao.com","chenhao.com"); %>
+        <td><%= session.getId() %></td>
+      </tr>
+      <tr>
+        <td>Created on</td>
+        <td><%= session.getCreationTime() %></td>
+     </tr>
+    </table>
+  </body>
+</html>
+ 
+8）service tomcat start
+
+TomcatB所在192.168.139.171节点具体配置和TomcatA节点配置一样
+测试验证：
+        1）配置好TomcatA和TomcatB两台主机后，务必要先单独测试http://192.168.139.171:8080/test和http://192.168.139.192:8080/test都是访问正常的，否则无法验证会话绑定效果
+        2）浏览器中访问http://192.168.139.192/test,此时必须要输入/test，因为此时的配置只对/test做会话保持，对其他任何路径的访问都不做会话保持，
+           比如浏览器中访问http://192.168.139.192/是不能实现会话保持的---非常重要
+        3）在任意浏览器中访问http://192.168.139.192/test，访问结果如下所示，其session ID在负载均衡环境中保持不变（也就是sessionID不变，但是hostname会变），
+           说明会话绑定成功
+        TomcatA.chenhao.com
+        Session ID 	FFE74BCF093EA2595E9D7948E02C7E16-n2.TomcatA
+        Created on 	1504882349548
+      
+        TomcatB.chenhao.com
+        Session ID 	FFE74BCF093EA2595E9D7948E02C7E16-n2.TomcatB
+        Created on 	1504882349548
+
+问题：怎么实现主机的server形式会话保持呢？没有能实现
+
+博客作业：
+ 		
+    (1) nginx, apache(mod_proxy_http, mod_proxy_ajp, mod_jk)反代用户请求至tomcat；
+ 		
+    (2) nginx, apache(mod_proxy_http, mod_proxy_ajp, mod_jk)负载均衡用户请求至tomcat；额外实现session sticky；
+ 		
+    (3) tomcat session cluster;
+
+ 		
+实际应用：
+ 			
+      haproxy --> lamt ()
+	
+
